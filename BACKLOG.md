@@ -14,18 +14,18 @@ Severity: 🔴 blocks progress · 🟡 needs resolving before its phase · 🟢 
 
 These have no technical answer. They are yours to make, and the roadmap branches on them.
 
-### 🔴 B1 — Pricing is unresolved and the $1 target looks unviable
-**Phase:** 0 (ideally) · **Blocks:** whether Phase 7 exists at all
+### ✅ B1 — Pricing — RESOLVED 2026-08-11
 
-SRS §1.2 targets a $1 price. Research since found [extradock.app](https://extradock.app/) selling the same concept at $14.99/yr or $37.99 lifetime. Meanwhile the Apple Developer Program is a $99/yr fixed cost.
+**Decision: $5 lifetime as an early-adopter price, raised for new users once the product gains traction. Existing buyers grandfathered.**
 
-At $1/unit that's ~100 sales annually just to break even on the account, before any value on your time. Three honest outcomes:
+Break-even: at ~10% processor fees, $5 nets ~$4.50, so the $99/yr Apple Developer account is covered by **~22 sales/year** (vs. ~100 at the original $1). Viable.
 
-- **Personal tool** — build it, never sign it, run it locally. Cost: $0. Most of Phase 7 disappears.
-- **Free / open source** — same as above, plus you owe users a Gatekeeper workaround story.
-- **Real product** — price it against the competitor, not against $1.
+Positioning: $5 against a $37.99 lifetime competitor is a deliberate ~7× undercut to buy early adoption.
 
-Worth resolving early because it determines how much of Phase 7 you need, and whether polish work in Phase 6 is justified.
+**Consequences — this decision propagates:**
+- **This is now a commercial product**, so **B3 (no LICENSE file on ExtraDock) is genuinely blocking**, not academic.
+- Phase 7 stays in scope in full: Developer ID, notarization, licensing infrastructure.
+- Three new concerns created — see *Commercial / licensing* below.
 
 ### 🔴 B2 — Fork vs. greenfield undecided
 **Phase:** 0 · **Blocks:** Phases 1–3
@@ -121,6 +121,45 @@ Add a schema version field to persisted config on the very first write. One line
 **Phase:** 2 onward · **Source:** NFR-6
 
 Use `String(localized:)` from the first UI commit even though only English ships. Retrofitting is disproportionately painful.
+
+---
+
+## Commercial / licensing
+
+Created by the B1 decision (2026-08-11).
+
+### 🔴 C1 — "Lifetime" is an unbounded liability at $5
+**Phase:** 7 · **Decide before first sale**
+
+"Lifetime" is the riskiest word in the pricing decision. It commits you to perpetual updates for a one-time $4.50 net, on a platform that ships a breaking OS release every year. This app is unusually exposed to that — it depends on `NSScreen`, non-activating panel behavior, and Dock-adjacent APIs, all of which Apple can and does change. The competitor charges $37.99 for the same promise; at $5 you carry ~7× the obligation per dollar.
+
+Note this repo already contains evidence of the risk: ExtraDock targets macOS 15 and needed no changes for 26 — but Liquid Glass landed in 26 and a visual overhaul is exactly the kind of unpaid work "lifetime" obliges.
+
+Define the scope of "lifetime" **before** the first sale, since you cannot narrow it afterward. Common options:
+- Lifetime updates within a major version; v2 is a paid upgrade *(recommended — industry-standard, keeps the door open)*
+- Perpetual fallback: pay once, get 1 year of updates, keep using the last version you're entitled to forever (the Sketch model)
+- Truly unlimited *(simplest to market, hardest to sustain)*
+
+### 🟡 C2 — Merchant of record needed for VAT / sales tax
+**Phase:** 7
+
+Selling software internationally creates VAT and sales-tax obligations from the first sale. At this scale, use a platform that acts as **merchant of record** and absorbs that compliance — Paddle, Lemon Squeezy, or Gumroad. Raw Stripe does **not**; it leaves the liability with you.
+
+The fee difference is irrelevant next to handling EU VAT registration yourself.
+
+### 🟡 C3 — Grandfathering requires the license system to record a tier
+**Phase:** 7 · **Depends on:** C1
+
+The plan raises prices later while honoring early buyers. That's only possible if each license records **what it entitled the holder to at purchase time** — price tier, purchase date, and entitlement scope.
+
+Cheap to build in now, effectively impossible to reconstruct later. Bake purchase tier into the license payload from the first key issued, even if v1 only ever reads one value.
+
+### 🟢 C4 — Pricing is not the distribution problem
+**Phase:** post-launch
+
+"Once word spreads" carries most of the risk in this plan. The OSS ExtraDock has 1 star after 30 commits — building the thing is demonstrably not the same as being found. Discovery, not price, is the binding constraint on reaching even 22 sales/year.
+
+Worth a deliberate launch plan (r/macapps, Hacker News, Product Hunt) rather than assuming word of mouth.
 
 ---
 
