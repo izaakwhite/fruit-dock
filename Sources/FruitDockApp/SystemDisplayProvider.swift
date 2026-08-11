@@ -9,6 +9,8 @@ import FruitDockCore
 final class SystemDisplayProvider: DisplayProviding {
     private var changeHandler: (() -> Void)?
     private var observer: NSObjectProtocol?
+    private var dockLocationTimer: Timer?
+    private var lastDockHosts: Set<DisplayID> = []
 
     var connectedDisplays: [DisplayInfo] {
         let screens = NSScreen.screens
@@ -51,6 +53,49 @@ final class SystemDisplayProvider: DisplayProviding {
             || rightInset > threshold
     }
 
+    /// Watches for Apple's Dock moving between displays.
+    ///
+    /// `didChangeScreenParametersNotification` does not cover this. Moving the
+    /// Dock changes no screen parameter — only the space the Dock reserves,
+    /// which shows up as a different `visibleFrame` — so the notification
+    /// never fires and nothing would react.
+    ///
+    /// Polling is the deliberate exception to the no-polling rule (NFR-1).
+    /// There is no notification to observe, the check is a handful of rect
+    /// comparisons, and it only runs while more than one display is connected
+    /// — with a single display there is nowhere for the Dock to move to.
+    private func startWatchingDockLocation() {
+        dockLocationTimer?.invalidate()
+        dockLocationTimer = nil
+
+        guard NSScreen.screens.count > 1 else { return }
+
+        lastDockHosts = currentDockHosts()
+        dockLocationTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.5, repeats: true
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.checkDockLocation()
+            }
+        }
+    }
+
+    private func currentDockHosts() -> Set<DisplayID> {
+        Set(
+            NSScreen.screens
+                .filter(Self.hostsSystemDock)
+                .compactMap(Self.displayID(for:))
+        )
+    }
+
+    private func checkDockLocation() {
+        let hosts = currentDockHosts()
+        guard hosts != lastDockHosts else { return }
+
+        lastDockHosts = hosts
+        changeHandler?()
+    }
+
     func onDisplayChange(_ handler: @escaping () -> Void) {
         changeHandler = handler
 
@@ -63,9 +108,14 @@ final class SystemDisplayProvider: DisplayProviding {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
+                // A display may have arrived or left, which changes whether
+                // the Dock has anywhere to move to.
+                self?.startWatchingDockLocation()
                 self?.changeHandler?()
             }
         }
+
+        startWatchingDockLocation()
     }
 
     // No `deinit` cleanup: main-actor state is unreachable from a nonisolated

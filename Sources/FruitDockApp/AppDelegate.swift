@@ -92,6 +92,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(avoidItem)
 
         menu.addItem(.separator())
+
+        // One click to each pane people actually need. macOS will not let an
+        // app change these itself, so landing them on the right screen is the
+        // most that can be done — and is what Mac users expect.
+        let settingsItem = NSMenuItem(title: "System Settings", action: nil, keyEquivalent: "")
+        let settingsMenu = NSMenu()
+        for (title, pane) in [
+            ("Dock & Menu Bar…", SystemSettings.Pane.dock),
+            ("Displays…", .displays),
+            ("Accessibility: Display…", .accessibilityDisplay),
+            ("Privacy: Accessibility…", .accessibilityPrivacy),
+        ] {
+            let item = NSMenuItem(
+                title: title, action: #selector(openSettingsPane(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = pane
+            settingsMenu.addItem(item)
+        }
+        settingsItem.submenu = settingsMenu
+        menu.addItem(settingsItem)
+
+        menu.addItem(.separator())
         menu.addItem(
             withTitle: "Quit fruit-dock",
             action: #selector(NSApplication.terminate(_:)),
@@ -115,6 +137,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleAvoidsSystemDock(_ sender: NSMenuItem) {
         coordinator.setAvoidsSystemDockDisplay(sender.state == .off)
+    }
+
+    @objc private func openSettingsPane(_ sender: NSMenuItem) {
+        guard let pane = sender.representedObject as? SystemSettings.Pane else { return }
+        SystemSettings.open(pane)
     }
 }
 
