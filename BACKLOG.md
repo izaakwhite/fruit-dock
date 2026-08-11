@@ -34,10 +34,16 @@ Worth resolving early because it determines how much of Phase 7 you need, and wh
 
 Evaluation criteria are in ROADMAP.md §0.1. This is an hour of work that could delete weeks.
 
-### 🟡 B3 — License provenance is unclear
-**Phase:** 0 · **Blocks:** B2
+### 🔴 B3 — There is no LICENSE file (escalated 2026-08-11)
+**Phase:** 0 · **Blocks:** B2 · **Evidence:** [EVALUATION.md](./EVALUATION.md)
 
-The MIT GitHub repo and the commercial extradock.app product share a name, but the paid site never mentions open source. Before forking, establish whether they're the same codebase, the same author, or unrelated projects that collided on naming. Forking commercially from MIT is fine; forking something with a murkier history is not.
+Worse than originally assessed. The repo contains **no `LICENSE` file at all**. The only grant is line 72 of README.md — the bare word `MIT`, with no copyright holder, no year, and no license text. GitHub's "MIT" label is a detector heuristic reading that line, not an actual grant.
+
+Fine for personal use. **Not sufficient for a commercial product** — no identified copyright holder to attribute, no terms conveyed.
+
+Couples to B1: negligible risk if this becomes a personal tool, blocking if it becomes a product. Resolution is cheap — open an issue asking the author to add a proper LICENSE file.
+
+Separately, whether the MIT repo and the commercial extradock.app are the same codebase remains unestablished.
 
 ### 🟡 B4 — The core premise may be partly solved by macOS already
 **Phase:** 0 · **Blocks:** scope
@@ -55,10 +61,9 @@ SRS says "macOS 14+"; dev machine is 26.5.2. Supporting 14+ spans the Liquid Gla
 
 ## Environment blockers
 
-### 🔴 E1 — Xcode not installed
-**Phase:** 0 · **Status:** in progress
+### ✅ E1 — Xcode not installed — RESOLVED 2026-08-11
 
-Only Command Line Tools present. `xcodebuild` absent. Nothing in Phase 1+ can build. Note that installation requires Apple ID + 2FA and cannot be fully automated.
+Xcode 26.6 (17F113) installed at `/Applications/Xcode-26.6.0.app`, macOS 26.5 SDK, Swift 6.3.3. Verified by building a real project.
 
 ### 🟢 E2 — Apple Developer Program ($99/yr) not purchased
 **Phase:** 7
@@ -86,8 +91,12 @@ Treat the roadmap's API-level assertions as hypotheses. Verify before building o
 
 The whole product rests on being able to pin a borderless, non-activating, always-on-top window to a chosen display. Under Tahoe this is assumed, not demonstrated. That's precisely why Phase 1 is scoped as an empty walking skeleton — to fail fast if the assumption is wrong.
 
-### 🟡 T3 — Display identity must be stable, not positional
-**Phase:** 5
+### 🟢 T3 — Display identity must be stable, not positional
+**Phase:** 5 · **Reference solution found 2026-08-11**
+
+ExtraDock solves this correctly — panels keyed by `CGDirectDisplayID` obtained from `screen.deviceDescription["NSScreenNumber"]`, never by array index. See [EVALUATION.md](./EVALUATION.md). Downgraded from 🟡: the approach is now known, just needs implementing.
+
+Original concern retained below.
 
 `NSScreen.screens` ordering is not guaranteed stable across display reconfiguration. Identifying the host display by array index will produce bugs that only reproduce after unplug/replug or reordering in System Settings — the worst kind to debug.
 
@@ -131,4 +140,8 @@ Recorded so they don't silently reappear as scope creep.
 
 ## Resolved
 
-*(nothing yet — move items here with the decision and date when settled)*
+| ID | Item | Resolution | Date |
+|---|---|---|---|
+| E1 | Xcode not installed | Xcode 26.6 (17F113) installed, macOS 26.5 SDK, Swift 6.3.3. Verified by building a real project. Note: `xcodes` cached a 403 HTML error page as a `.xip`, causing a misleading trace trap — root cause was an unaccepted Apple Developer agreement, not the download. | 2026-08-11 |
+| E3 | Not a git repository | `git init`, committed, pushed to private repo `izaakwhite/fruit-dock`. Remote uses HTTPS (no SSH key on this machine). | 2026-08-11 |
+| T2 | Phase 1 window behavior unproven | Substantially de-risked. ExtraDock's non-activating `NSPanel` implementation builds and links against the 26.5 SDK. Not yet confirmed at runtime — launch the built app to close this out fully. | 2026-08-11 |
