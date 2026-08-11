@@ -54,18 +54,38 @@ final class SystemApplicationProvider: ApplicationProviding {
         }
     }
 
-    func activateOrLaunch(_ application: ApplicationInfo) {
+    func activateOrLaunch(_ application: ApplicationInfo, on displayID: DisplayID?) {
         if let running = runningApplication(for: application.bundleIdentifier) {
             running.activate()
+            // Placement is best-effort; the app is already frontmost either way.
+            if let displayID {
+                WindowPlacer.place(pid: running.processIdentifier, onto: displayID)
+            }
             return
         }
 
         let url = URL(fileURLWithPath: application.path)
-        NSWorkspace.shared.openApplication(at: url, configuration: .init()) { _, error in
+        NSWorkspace.shared.openApplication(at: url, configuration: .init()) { app, error in
             if let error {
                 NSLog("fruit-dock: could not launch \(application.name) — \(error)")
+                return
+            }
+            guard let displayID, let pid = app?.processIdentifier else { return }
+
+            // A just-launched app has no windows yet, so `place` retries until
+            // one appears or it gives up.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    WindowPlacer.place(pid: pid, onto: displayID)
+                }
             }
         }
+    }
+
+    func openTrash() {
+        NSWorkspace.shared.open(
+            URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent(".Trash"))
+        )
     }
 
     func quit(_ application: ApplicationInfo) {

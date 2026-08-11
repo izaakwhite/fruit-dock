@@ -11,6 +11,12 @@ final class DockPanel: NSPanel {
     private let edge: DockEdge
     private let bar: DockBarView
     private var background: NSView?
+    private let hoverLabel = HoverLabelPanel()
+
+    /// Forwarded to the bar so clicks reach the coordinator.
+    weak var actionHandler: (any DockActionHandling)? {
+        didSet { bar.actionHandler = actionHandler }
+    }
 
     /// Gap between the dock and the screen edge it sits against.
     private static let margin: CGFloat = 8
@@ -19,6 +25,7 @@ final class DockPanel: NSPanel {
         self.displayID = display.id
         self.edge = configuration.edge
         self.bar = DockBarView(isVertical: configuration.edge.isVertical)
+        bar.displayID = display.id
 
         super.init(
             contentRect: .zero,
@@ -40,10 +47,32 @@ final class DockPanel: NSPanel {
 
         contentView = makeContentView()
 
+        // The bar reports hover in window coordinates; only the panel knows
+        // which window and screen those belong to.
+        bar.onHover = { [weak self] hovered in
+            guard let self else { return }
+            guard let (name, rectInWindow) = hovered, let screen = self.screen else {
+                self.hoverLabel.hide()
+                return
+            }
+            self.hoverLabel.show(
+                text: name,
+                near: self.convertToScreen(rectInWindow),
+                edge: self.edge,
+                on: screen
+            )
+        }
+
         // Start invisible; `fadeIn()` reveals once contents and size are set,
         // so the panel never flashes at the wrong size or on the wrong screen.
         alphaValue = 0
         orderFrontRegardless()
+    }
+
+    override func close() {
+        // The label is a separate window and would outlive its dock otherwise.
+        hoverLabel.orderOut(nil)
+        super.close()
     }
 
     // MARK: - Appearance
@@ -133,14 +162,15 @@ final class DockPanel: NSPanel {
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             animator().alphaValue = 0
         } completionHandler: { [weak self] in
-            self?.close()
+            MainActor.assumeIsolated {
+                self?.close()
+            }
         }
     }
 
     // MARK: - Contents
 
-    func update(elements: [DockElement], handlers: DockBarHandlers) {
-        bar.handlers = handlers
+    func update(elements: [DockElement]) {
         bar.update(elements: elements)
         resizeAndReposition(elements: elements)
     }

@@ -10,14 +10,26 @@ import FruitDockCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: DockCoordinator!
     private var statusItem: NSStatusItem!
+    private var appearanceObserver: NSObjectProtocol?
+
     private let displayProvider = SystemDisplayProvider()
+    private let presenter = PanelPresenter()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = DockCoordinator(
             displayProvider: displayProvider,
             applicationProvider: SystemApplicationProvider(),
-            store: UserDefaultsConfigurationStore()
+            store: UserDefaultsConfigurationStore(),
+            presenter: presenter
         )
+        // Weak on the presenter's side; the coordinator owns the relationship.
+        presenter.actionHandler = coordinator
+
+        // Reduce Transparency and friends can be toggled while running; a dock
+        // that only reads them at launch is a dock that ignores them.
+        appearanceObserver = SystemAppearance.observeChanges { [weak coordinator] in
+            coordinator?.refreshAppearance()
+        }
 
         setUpStatusItem()
         coordinator.start()
@@ -40,18 +52,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Rebuilt on each open so the display list is never stale.
     private func rebuildMenu(_ menu: NSMenu) {
         menu.removeAllItems()
-
         menu.addItem(.sectionHeader(title: "Show dock on"))
 
         for display in displayProvider.connectedDisplays {
             let item = NSMenuItem(
-                title: display.name,
-                action: #selector(toggleDisplay(_:)),
-                keyEquivalent: ""
-            )
+                title: display.name, action: #selector(toggleDisplay(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = display.id
             item.state = coordinator.configuration.isEnabled(display.id) ? .on : .off
+            // A display hosting Apple's Dock is skipped regardless, so showing
+            // it as togglable would be a lie.
+            item.isEnabled = !(display.hostsSystemDock
+                && coordinator.configuration.avoidsSystemDockDisplay)
             menu.addItem(item)
         }
 
@@ -61,10 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let edgeMenu = NSMenu()
         for edge in DockEdge.allCases {
             let item = NSMenuItem(
-                title: edge.rawValue.capitalized,
-                action: #selector(selectEdge(_:)),
-                keyEquivalent: ""
-            )
+                title: edge.rawValue.capitalized, action: #selector(selectEdge(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = edge
             item.state = coordinator.configuration.edge == edge ? .on : .off
@@ -73,23 +82,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edgeItem.submenu = edgeMenu
         menu.addItem(edgeItem)
 
-        let runningItem = NSMenuItem(
+        addToggle(
+            to: menu,
             title: "Show Running Apps",
-            action: #selector(toggleShowsRunningApps(_:)),
-            keyEquivalent: ""
+            isOn: coordinator.configuration.showsRunningApps,
+            action: #selector(toggleShowsRunningApps(_:))
         )
-        runningItem.target = self
-        runningItem.state = coordinator.configuration.showsRunningApps ? .on : .off
-        menu.addItem(runningItem)
-
-        let avoidItem = NSMenuItem(
+        addToggle(
+            to: menu,
             title: "Skip Display with macOS Dock",
-            action: #selector(toggleAvoidsSystemDock(_:)),
-            keyEquivalent: ""
+            isOn: coordinator.configuration.avoidsSystemDockDisplay,
+            action: #selector(toggleAvoidsSystemDock(_:))
         )
-        avoidItem.target = self
-        avoidItem.state = coordinator.configuration.avoidsSystemDockDisplay ? .on : .off
-        menu.addItem(avoidItem)
 
         menu.addItem(.separator())
 
@@ -120,6 +124,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: "q"
         )
     }
+
+    private func addToggle(to menu: NSMenu, title: String, isOn: Bool, action: Selector) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.state = isOn ? .on : .off
+        menu.addItem(item)
+    }
+
+    // MARK: - Actions
 
     @objc private func toggleDisplay(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? DisplayID else { return }

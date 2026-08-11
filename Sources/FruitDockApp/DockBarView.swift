@@ -1,20 +1,11 @@
 import AppKit
 import FruitDockCore
 
-/// Actions a dock element can trigger.
-@MainActor
-struct DockBarHandlers {
-    let activate: (ApplicationInfo) -> Void
-    let quit: (ApplicationInfo) -> Void
-    let togglePin: (ApplicationInfo) -> Void
-    let isPinned: (ApplicationInfo) -> Bool
-    let openTrash: () -> Void
-}
-
-/// Renders the dock's elements and reports clicks.
+/// Renders the dock's elements and reports interaction.
 ///
 /// Holds no decisions: it is handed a finished list of elements and draws it.
-/// What belongs in the list is `DockContentBuilder`'s job.
+/// What belongs in the list is `DockContentBuilder`'s job; what a click means
+/// is the coordinator's.
 @MainActor
 final class DockBarView: NSView {
     static let iconSize: CGFloat = 48
@@ -25,7 +16,15 @@ final class DockBarView: NSView {
     /// A separator takes far less room than an icon.
     static let separatorExtent: CGFloat = 11
 
-    var handlers: DockBarHandlers?
+    weak var actionHandler: (any DockActionHandling)?
+
+    /// The display this bar is drawn on, so a click can open the app here
+    /// rather than wherever macOS would otherwise put it.
+    var displayID: DisplayID?
+
+    /// Reports the hovered element's name and its bounds in this view's
+    /// window, or nil when nothing is hovered.
+    var onHover: ((String, NSRect)?) -> Void = { _ in }
 
     private var elements: [DockElement] = []
     private let stack = NSStackView()
@@ -78,11 +77,13 @@ final class DockBarView: NSView {
         guard elements != self.elements else { return }
         self.elements = elements
 
+        // Any hovered icon is about to be destroyed; its label must go too.
+        onHover(nil)
+
         for view in stack.arrangedSubviews {
             stack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
-
         for element in elements {
             stack.addArrangedSubview(makeView(for: element))
         }
@@ -102,7 +103,8 @@ final class DockBarView: NSView {
                 label: "Trash",
                 isRunning: false
             )
-            trash.onActivate = { [weak self] in self?.handlers?.openTrash() }
+            trash.onActivate = { [weak self] in self?.actionHandler?.openTrash() }
+            attachHoverReporting(to: trash, label: "Trash")
             view = trash
 
         case .app(let entry):
@@ -112,12 +114,15 @@ final class DockBarView: NSView {
                 label: application.name,
                 isRunning: entry.isRunning
             )
-            icon.onActivate = { [weak self] in self?.handlers?.activate(application) }
+            icon.onActivate = { [weak self] in
+                self?.actionHandler?.activate(application, on: self?.displayID)
+            }
             icon.onQuit = entry.isRunning
-                ? { [weak self] in self?.handlers?.quit(application) }
+                ? { [weak self] in self?.actionHandler?.quit(application) }
                 : nil
-            icon.onTogglePin = { [weak self] in self?.handlers?.togglePin(application) }
-            icon.isCurrentlyPinned = handlers?.isPinned(application) ?? entry.isPinned
+            icon.onTogglePin = { [weak self] in self?.actionHandler?.togglePin(application) }
+            icon.isCurrentlyPinned = actionHandler?.isPinned(application) ?? entry.isPinned
+            attachHoverReporting(to: icon, label: application.name)
             view = icon
         }
 
@@ -129,6 +134,19 @@ final class DockBarView: NSView {
             ),
         ])
         return view
+    }
+
+    private func attachHoverReporting(to icon: IconView, label: String) {
+        icon.onHoverChange = { [weak self, weak icon] isHovered in
+            guard let self, let icon else { return }
+            guard isHovered else {
+                self.onHover(nil)
+                return
+            }
+            // Reported in window coordinates; the panel converts to screen,
+            // since only it knows which window it belongs to.
+            self.onHover((label, icon.convert(icon.bounds, to: nil)))
+        }
     }
 
     private static var trashPath: String {
@@ -163,12 +181,12 @@ private final class SeparatorView: NSView {
 /// A single dock icon, its running indicator, and its context menu.
 @MainActor
 private final class IconView: NSView {
-    private let label: String
     private let isRunning: Bool
 
     var onActivate: (() -> Void)?
     var onQuit: (() -> Void)?
     var onTogglePin: (() -> Void)?
+    var onHoverChange: ((Bool) -> Void)?
     var isCurrentlyPinned = false
 
     private let imageView = NSImageView()
@@ -177,11 +195,11 @@ private final class IconView: NSView {
             guard isHovered != oldValue else { return }
             needsDisplay = true
             applyHoverScale()
+            onHoverChange?(isHovered)
         }
     }
 
     init(icon: NSImage, label: String, isRunning: Bool) {
-        self.label = label
         self.isRunning = isRunning
         super.init(frame: .zero)
         wantsLayer = true
@@ -200,8 +218,6 @@ private final class IconView: NSView {
             imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
             imageView.heightAnchor.constraint(equalTo: widthAnchor),
         ])
-
-        toolTip = label
     }
 
     @available(*, unavailable)
@@ -221,13 +237,35 @@ private final class IconView: NSView {
 
     override func mouseEntered(with event: NSEvent) { isHovered = true }
     override func mouseExited(with event: NSEvent) { isHovered = false }
-    override func mouseUp(with event: NSEvent) { onActivate?() }
+
+    /// Accept clicks even though the app is never frontmost.
+    ///
+    /// fruit-dock is an accessory app in a non-activating panel, so it never
+    /// becomes active — which makes *every* click a first-mouse click. Without
+    /// this, AppKit spends each one activating the window and the dock appears
+    /// to ignore being clicked entirely.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// Claims the click so the matching `mouseUp` is routed back here.
+    ///
+    /// A view that leaves `mouseDown` to `super` does not own the drag
+    /// session, and its `mouseUp` never arrives.
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        // Only count a release that lands on the icon it started on.
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+
+        // The icon is about to be replaced or the app about to come forward;
+        // either way the label should not linger.
+        isHovered = false
+        onActivate?()
+    }
 
     /// Grows the icon slightly under the cursor.
     ///
-    /// Skipped entirely under Reduce Motion, where the scale is applied
-    /// without animation rather than not at all — the affordance survives,
-    /// the movement does not.
+    /// Under Reduce Motion the scale is applied without animation rather than
+    /// skipped — the affordance survives, the movement does not.
     private func applyHoverScale() {
         let scale: CGFloat = isHovered ? 1.12 : 1
         let transform = CATransform3DMakeScale(scale, scale, 1)
@@ -256,7 +294,6 @@ private final class IconView: NSView {
             quit.target = self
             menu.addItem(quit)
         }
-
         if onTogglePin != nil {
             let pin = NSMenuItem(
                 title: isCurrentlyPinned ? "Remove from Dock" : "Keep in Dock",
@@ -266,7 +303,6 @@ private final class IconView: NSView {
             pin.target = self
             menu.addItem(pin)
         }
-
         return menu.items.isEmpty ? nil : menu
     }
 
@@ -288,11 +324,7 @@ private final class IconView: NSView {
         guard isRunning else { return }
         let diameter: CGFloat = 4.5
         let dot = NSRect(
-            x: bounds.midX - diameter / 2,
-            y: 1,
-            width: diameter,
-            height: diameter
-        )
+            x: bounds.midX - diameter / 2, y: 1, width: diameter, height: diameter)
         // Full-strength label colour, so the indicator reads without relying
         // on hue — Differentiate Without Color safe.
         NSColor.labelColor.withAlphaComponent(0.85).setFill()
