@@ -149,6 +149,34 @@ Seed-then-diverge, not slave-to: once the user changes one of our settings, ours
 
 **Related:** the OSS ExtraDock reads the Dock plist directly and watches it with a file watcher, which is why it cannot be sandboxed. Reading via `UserDefaults(suiteName: "com.apple.dock")` is the lighter-touch route for Tier 2.
 
+### 🔴 T9 — The AppKit shell has no tests, and that is where bugs are
+**Phase:** 2 · **Added 2026-08-11**
+
+The dock-follows-Dock feature shipped completely non-functional while every test passed. The reconciler was correct and well covered; **nothing ever called it**, because the trigger relied on a notification that does not fire for that event.
+
+The tests proved the decision was right. They could not prove anything asked for a decision.
+
+That gap is structural, not a one-off. `FruitDockCore` is well covered; `FruitDockApp` — `DockCoordinator`, `SystemDisplayProvider`, panel lifecycle — has zero coverage, and every bug found by hand so far has lived there.
+
+`DockCoordinator` is testable today. It takes `DisplayProviding`, `ApplicationProviding`, and `ConfigurationStoring` as protocols precisely so fakes can be substituted; the fakes were simply never written. Worth covering:
+
+- A display-change callback actually triggers reconciliation
+- A running-apps change actually triggers a content refresh
+- Panels are created and torn down as plans dictate
+- Settings changes persist *and* refresh, rather than one or the other
+- Toggling a display off, then on, restores its panel
+
+**Lesson worth keeping:** a pure function tested in isolation says nothing about whether it is wired up. Coverage of the domain is not coverage of the product.
+
+### 🟡 T10 — No notification exists for the system Dock's location
+**Phase:** 5 · **Added 2026-08-11**
+
+Recorded because it is unobvious and cost real time. `NSApplication.didChangeScreenParametersNotification` does **not** fire when the user moves Apple's Dock between displays: no screen parameter changes, only the space the Dock reserves, which surfaces as a different `visibleFrame`.
+
+Current workaround is a 500ms poll, scheduled only while more than one display is connected. It is the deliberate exception to the no-polling rule in NFR-1 — a few rect comparisons, and with one display the Dock has nowhere to move.
+
+Revisit if a real notification is ever found. Any future code that assumes screen-parameter notifications cover Dock movement will have this same bug.
+
 ### 🟢 T6 — Config schema versioning
 **Phase:** 4
 
@@ -220,4 +248,5 @@ Recorded so they don't silently reappear as scope creep.
 |---|---|---|---|
 | E1 | Xcode not installed | Xcode 26.6 (17F113) installed, macOS 26.5 SDK, Swift 6.3.3. Verified by building a real project. Note: `xcodes` cached a 403 HTML error page as a `.xip`, causing a misleading trace trap — root cause was an unaccepted Apple Developer agreement, not the download. | 2026-08-11 |
 | E3 | Not a git repository | `git init`, committed, pushed to private repo `izaakwhite/fruit-dock`. Remote uses HTTPS (no SSH key on this machine). | 2026-08-11 |
-| T2 | Phase 1 window behavior unproven | Substantially de-risked. ExtraDock's non-activating `NSPanel` implementation builds and links against the 26.5 SDK. Not yet confirmed at runtime — launch the built app to close this out fully. | 2026-08-11 |
+| T2 | Phase 1 window behavior unproven | **Fully verified at runtime.** A borderless `.nonactivatingPanel` renders on the correct display, pins to any edge, and confirmed does **not** steal focus — typing continues uninterrupted in the frontmost app while the dock is clicked. This was the riskiest assumption in the plan. | 2026-08-11 |
+| T8 Tier 1 | Accessibility settings ignored | Reduce Transparency now yields a solid background, Reduce Motion collapses transitions, Increase Contrast adds borders. Read live and observed via `accessibilityDisplayOptionsDidChangeNotification`. Tiers 2 and 3 remain open. | 2026-08-11 |
