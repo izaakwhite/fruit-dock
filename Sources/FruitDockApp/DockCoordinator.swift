@@ -1,8 +1,8 @@
 import AppKit
 import FruitDockCore
 
-/// Owns the live dock panels and keeps them in step with the hardware and the
-/// set of running applications.
+/// Owns the live dock panels and keeps them in step with the hardware, the
+/// running applications, and the user's system settings.
 ///
 /// Deliberately thin. It decides nothing: `DisplayReconciler` decides which
 /// panels should exist and `DockContentBuilder` decides what goes in them.
@@ -14,6 +14,7 @@ final class DockCoordinator {
     private let store: any ConfigurationStoring
 
     private var panels: [DisplayID: DockPanel] = [:]
+    private var appearanceObserver: NSObjectProtocol?
     private(set) var configuration: DockConfiguration
 
     init(
@@ -34,6 +35,11 @@ final class DockCoordinator {
         }
         applicationProvider.onRunningApplicationsChange { [weak self] in
             self?.refreshContents()
+        }
+        // Reduce Transparency and friends can be toggled while running; a dock
+        // that only reads them at launch is a dock that ignores them.
+        appearanceObserver = SystemAppearance.observeChanges { [weak self] in
+            self?.refreshAppearance()
         }
         refreshDisplays()
     }
@@ -57,7 +63,9 @@ final class DockCoordinator {
 
     private func apply(_ plan: ReconciliationPlan, connected: [DisplayInfo]) {
         for id in plan.toRemove {
-            panels.removeValue(forKey: id)?.close()
+            // Detached from the dictionary first so a panel mid-fade is never
+            // mistaken for a live one if displays change again during it.
+            panels.removeValue(forKey: id)?.fadeOutAndClose()
         }
 
         for id in plan.toCreate {
@@ -82,24 +90,43 @@ final class DockCoordinator {
     /// Every panel shows the same contents, so the list is built once and
     /// handed to each — not rebuilt per display.
     private func refreshContents() {
-        let entries = DockContentBuilder.entries(
+        let elements = DockContentBuilder.elements(
             pinned: configuration.pinnedItems,
             running: applicationProvider.runningApplications,
             showsRunningApps: configuration.showsRunningApps
         )
+        let handlers = makeHandlers()
 
-        let handlers = DockPanelHandlers(
+        for panel in panels.values {
+            panel.update(elements: elements, handlers: handlers)
+            // Newly created panels start transparent so they never flash at
+            // the wrong size; revealing here means contents are already set.
+            panel.fadeIn()
+        }
+    }
+
+    private func makeHandlers() -> DockBarHandlers {
+        DockBarHandlers(
             activate: { [weak self] app in self?.applicationProvider.activateOrLaunch(app) },
             quit: { [weak self] app in self?.applicationProvider.quit(app) },
             togglePin: { [weak self] app in self?.togglePin(app) },
             isPinned: { [weak self] app in
                 self?.configuration.isPinned(app.bundleIdentifier) ?? false
+            },
+            openTrash: {
+                NSWorkspace.shared.open(
+                    URL(fileURLWithPath: (NSHomeDirectory() as NSString)
+                        .appendingPathComponent(".Trash"))
+                )
             }
         )
+    }
 
+    private func refreshAppearance() {
         for panel in panels.values {
-            panel.update(entries: entries, handlers: handlers)
+            panel.refreshAppearance()
         }
+        refreshContents()
     }
 
     // MARK: - Settings
@@ -145,7 +172,7 @@ final class DockCoordinator {
     }
 
     private func rebuildAllPanels() {
-        for panel in panels.values { panel.close() }
+        for panel in panels.values { panel.fadeOutAndClose() }
         panels.removeAll()
         refreshDisplays()
     }
