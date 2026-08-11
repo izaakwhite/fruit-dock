@@ -13,6 +13,10 @@ xcuserdata/
 .build/
 .swiftpm/
 
+# Editors — local tooling config, not project config
+.vscode/
+.idea/
+
 # Signing / secrets — never commit
 *.p12
 *.mobileprovision
