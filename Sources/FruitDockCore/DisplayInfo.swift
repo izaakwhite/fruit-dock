@@ -12,9 +12,22 @@ public struct DisplayInfo: Hashable, Sendable, Identifiable {
     /// Whether this display currently hosts the system menu bar.
     public let isPrimary: Bool
 
-    public init(id: DisplayID, name: String, isPrimary: Bool = false) {
+    /// Whether Apple's own Dock is currently on this display.
+    ///
+    /// Dynamic, not a fixed property: macOS moves the Dock to whichever
+    /// display the user pushes the cursor to the bottom edge of, so this can
+    /// change without any display being connected or disconnected.
+    public let hostsSystemDock: Bool
+
+    public init(
+        id: DisplayID,
+        name: String,
+        isPrimary: Bool = false,
+        hostsSystemDock: Bool = false
+    ) {
         self.id = id
         self.name = name
         self.isPrimary = isPrimary
+        self.hostsSystemDock = hostsSystemDock
     }
 }

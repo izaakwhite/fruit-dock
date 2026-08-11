@@ -32,8 +32,15 @@ public enum DisplayReconciler {
         existingPanels: Set<DisplayID>,
         configuration: DockConfiguration
     ) -> ReconciliationPlan {
-        let connectedIDs = Set(connected.map(\.id))
-        let desired = connectedIDs.filter(configuration.isEnabled)
+        let desired = Set(
+            connected
+                // Never stack our dock on top of Apple's. macOS keeps its Dock
+                // on exactly one display; we fill in the others, so between us
+                // every display has exactly one dock and none has two.
+                .filter { !($0.hostsSystemDock && configuration.avoidsSystemDockDisplay) }
+                .map(\.id)
+                .filter(configuration.isEnabled)
+        )
 
         return ReconciliationPlan(
             toCreate: desired.subtracting(existingPanels),

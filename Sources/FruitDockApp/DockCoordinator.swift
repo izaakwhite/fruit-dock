@@ -123,6 +123,12 @@ final class DockCoordinator {
         refreshContents()
     }
 
+    func setAvoidsSystemDockDisplay(_ avoids: Bool) {
+        configuration.avoidsSystemDockDisplay = avoids
+        // Changes which displays qualify, so this is a display-level refresh.
+        persistAndRefreshDisplays()
+    }
+
     private func togglePin(_ application: ApplicationInfo) {
         if configuration.isPinned(application.bundleIdentifier) {
             configuration.unpin(application.bundleIdentifier)

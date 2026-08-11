@@ -18,9 +18,37 @@ final class SystemDisplayProvider: DisplayProviding {
                 id: id,
                 name: screen.localizedName,
                 // The system menu bar lives on the first screen.
-                isPrimary: screen == screens.first
+                isPrimary: screen == screens.first,
+                hostsSystemDock: Self.hostsSystemDock(screen)
             )
         }
+    }
+
+    /// Detects whether Apple's Dock is currently on `screen`.
+    ///
+    /// There is no API that answers this directly, but `visibleFrame` is
+    /// `frame` minus the space the system reserves — which is precisely the
+    /// menu bar and the Dock. An inset on the bottom, left, or right edge
+    /// therefore means the Dock is there. The top edge is excluded because
+    /// that inset is the menu bar (and, on some Macs, the camera housing).
+    ///
+    /// Returns false when the Dock is hidden, which is correct: a hidden Dock
+    /// leaves the screen to us.
+    static func hostsSystemDock(_ screen: NSScreen) -> Bool {
+        let full = screen.frame
+        let visible = screen.visibleFrame
+
+        // A tolerance, since these are floating point and scaled displays can
+        // leave sub-point differences.
+        let threshold: CGFloat = 1
+
+        let bottomInset = visible.minY - full.minY
+        let leftInset = visible.minX - full.minX
+        let rightInset = full.maxX - visible.maxX
+
+        return bottomInset > threshold
+            || leftInset > threshold
+            || rightInset > threshold
     }
 
     func onDisplayChange(_ handler: @escaping () -> Void) {

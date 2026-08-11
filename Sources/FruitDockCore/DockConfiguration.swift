@@ -35,13 +35,22 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
     /// Whether running-but-unpinned apps appear after the pinned ones. FR-3.4.
     public var showsRunningApps: Bool
 
+    /// Whether to leave the display that currently hosts Apple's Dock alone.
+    ///
+    /// On by default. Two docks on one screen is redundant and confusing, and
+    /// the system Dock cannot be removed — `Dock.app` also owns Mission
+    /// Control, Spaces, and Launchpad, so it is not ours to replace. Filling
+    /// in the displays it is absent from gives every screen exactly one dock.
+    public var avoidsSystemDockDisplay: Bool
+
     public init(
         schemaVersion: Int = DockConfiguration.currentSchemaVersion,
         disabledDisplays: Set<DisplayID> = [],
         edge: DockEdge = .bottom,
         iconSize: Double = 48,
         pinnedItems: [DockItem] = [],
-        showsRunningApps: Bool = true
+        showsRunningApps: Bool = true,
+        avoidsSystemDockDisplay: Bool = true
     ) {
         self.schemaVersion = schemaVersion
         self.disabledDisplays = disabledDisplays
@@ -49,6 +58,7 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
         self.iconSize = iconSize
         self.pinnedItems = pinnedItems
         self.showsRunningApps = showsRunningApps
+        self.avoidsSystemDockDisplay = avoidsSystemDockDisplay
     }
 
     /// Sane fallback when nothing has been persisted, or when persisted data
@@ -109,5 +119,7 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
             ?? fallback.pinnedItems
         showsRunningApps = try container.decodeIfPresent(Bool.self, forKey: .showsRunningApps)
             ?? fallback.showsRunningApps
+        avoidsSystemDockDisplay = try container.decodeIfPresent(Bool.self, forKey: .avoidsSystemDockDisplay)
+            ?? fallback.avoidsSystemDockDisplay
     }
 }

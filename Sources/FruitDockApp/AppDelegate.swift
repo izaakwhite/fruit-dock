@@ -82,6 +82,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runningItem.state = coordinator.configuration.showsRunningApps ? .on : .off
         menu.addItem(runningItem)
 
+        let avoidItem = NSMenuItem(
+            title: "Skip Display with macOS Dock",
+            action: #selector(toggleAvoidsSystemDock(_:)),
+            keyEquivalent: ""
+        )
+        avoidItem.target = self
+        avoidItem.state = coordinator.configuration.avoidsSystemDockDisplay ? .on : .off
+        menu.addItem(avoidItem)
+
         menu.addItem(.separator())
         menu.addItem(
             withTitle: "Quit fruit-dock",
@@ -102,6 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleShowsRunningApps(_ sender: NSMenuItem) {
         coordinator.setShowsRunningApps(sender.state == .off)
+    }
+
+    @objc private func toggleAvoidsSystemDock(_ sender: NSMenuItem) {
+        coordinator.setAvoidsSystemDockDisplay(sender.state == .off)
     }
 }
 
