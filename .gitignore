@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Signing / secrets — never commit
+*.p12
+*.mobileprovision
+*.cer
+.env
