@@ -112,6 +112,43 @@ Use a stable hardware identifier. [DockAnchor](https://github.com/bwya77/DockAnc
 
 Unsigned apps downloaded from the internet are quarantined, and Apple has been steadily removing the easy bypasses. If B1 lands on "free tool," the distribution story is *ship source, build locally* — locally built apps are never quarantined. Binary distribution without signing is a poor user experience.
 
+### 🔴 T8 — Dock must respect the user's system settings
+**Phase:** 3/6 · **Added 2026-08-11**
+
+A dock that ignores the settings the user already configured for the system Dock reads as broken, not as customisable. Three tiers, in priority order.
+
+**Tier 1 — accessibility. Non-negotiable, and currently violated.**
+
+`DockPanel` hardcodes `NSVisualEffectView` with `.hudWindow`, which ignores **Reduce Transparency**. A user who turned that on gets exactly the effect they asked the system not to produce. Honour, via `NSWorkspace.shared`:
+
+| Setting | Property | Effect on us |
+|---|---|---|
+| Reduce Transparency | `accessibilityDisplayShouldReduceTransparency` | Solid background instead of blur |
+| Reduce Motion | `accessibilityDisplayShouldReduceMotion` | Skip magnification/hide animations |
+| Increase Contrast | `accessibilityDisplayShouldIncreaseContrast` | Stronger borders, higher-contrast indicators |
+| Differentiate Without Color | `accessibilityDisplayShouldDifferentiateWithoutColor` | Running indicator must not rely on colour alone |
+
+These change at runtime — observe `NSWorkspace.didChangeAccessibilityDisplayOptionsNotification`, don't read once at launch.
+
+**Tier 2 — inherit the system Dock's preferences as defaults.**
+
+Read `com.apple.dock` and use it to seed our own settings, so a new install already matches the user's habits rather than starting at arbitrary values:
+
+| Key | Meaning |
+|---|---|
+| `tilesize` | icon size — should seed `DockConfiguration.iconSize` |
+| `magnification`, `largesize` | hover magnification, and its target size |
+| `orientation` | `bottom`/`left`/`right` — should seed `DockConfiguration.edge` |
+| `autohide`, `autohide-delay`, `autohide-time-modifier` | auto-hide behaviour and timing |
+| `show-process-indicators` | whether running dots appear at all |
+| `mineffect` | minimise animation |
+
+Seed-then-diverge, not slave-to: once the user changes one of our settings, ours wins. Read-only — never write to `com.apple.dock`.
+
+**Tier 3 — general system appearance.** Light/dark (NFR-4), accent and highlight colour, and menu bar auto-hide interactions. Use semantic `NSColor`s throughout so most of this is automatic; the current code already does.
+
+**Related:** the OSS ExtraDock reads the Dock plist directly and watches it with a file watcher, which is why it cannot be sandboxed. Reading via `UserDefaults(suiteName: "com.apple.dock")` is the lighter-touch route for Tier 2.
+
 ### 🟢 T6 — Config schema versioning
 **Phase:** 4
 

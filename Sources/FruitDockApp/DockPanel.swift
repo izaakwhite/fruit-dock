@@ -9,12 +9,15 @@ import FruitDockCore
 final class DockPanel: NSPanel {
     let displayID: DisplayID
     private let edge: DockEdge
-    private let iconSize: Double
+    private let bar: DockBarView
+
+    /// Gap between the dock and the screen edge it sits against.
+    private static let margin: CGFloat = 8
 
     init(display: DisplayInfo, screen: NSScreen, configuration: DockConfiguration) {
         self.displayID = display.id
         self.edge = configuration.edge
-        self.iconSize = configuration.iconSize
+        self.bar = DockBarView(isVertical: configuration.edge.isVertical)
 
         super.init(
             contentRect: .zero,
@@ -34,67 +37,11 @@ final class DockPanel: NSPanel {
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
 
-        contentView = DockContentView(label: display.name, iconSize: iconSize)
-
-        reposition(on: screen)
+        contentView = makeContentView()
         orderFrontRegardless()
     }
 
-    /// Places the panel against the configured edge of its display.
-    ///
-    /// `visibleFrame` is used rather than `frame` so the panel sits clear of
-    /// the menu bar and the system Dock instead of underneath them.
-    func reposition(on screen: NSScreen) {
-        let area = screen.visibleFrame
-        let thickness = iconSize + 16
-        let length = min(area.width * 0.5, 420)
-
-        let rect: NSRect
-        switch edge {
-        case .bottom:
-            rect = NSRect(x: area.midX - length / 2, y: area.minY + 8, width: length, height: thickness)
-        case .top:
-            rect = NSRect(x: area.midX - length / 2, y: area.maxY - thickness - 8, width: length, height: thickness)
-        case .left:
-            rect = NSRect(x: area.minX + 8, y: area.midY - length / 2, width: thickness, height: length)
-        case .right:
-            rect = NSRect(x: area.maxX - thickness - 8, y: area.midY - length / 2, width: thickness, height: length)
-        }
-
-        setFrame(rect, display: true)
-    }
-
-    /// Re-resolves the screen before repositioning, for resolution changes.
-    func updatePosition() {
-        guard let screen = SystemDisplayProvider.screen(for: displayID) else { return }
-        reposition(on: screen)
-    }
-}
-
-/// Placeholder contents.
-///
-/// Phase 1 only needs to prove a non-activating panel lands on the correct
-/// display; showing the display's name makes that verifiable at a glance.
-/// Real icons arrive in Phase 3.
-@MainActor
-private final class DockContentView: NSView {
-    private let label: String
-    private let iconSize: Double
-
-    init(label: String, iconSize: Double) {
-        self.label = label
-        self.iconSize = iconSize
-        super.init(frame: .zero)
-        wantsLayer = true
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard subviews.isEmpty else { return }
-
+    private func makeContentView() -> NSView {
         let material = NSVisualEffectView()
         material.material = .hudWindow
         material.blendingMode = .behindWindow
@@ -102,25 +49,104 @@ private final class DockContentView: NSView {
         material.wantsLayer = true
         material.layer?.cornerRadius = 16
         material.layer?.masksToBounds = true
-        material.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(material)
 
-        let text = NSTextField(labelWithString: label)
-        text.font = .systemFont(ofSize: 12, weight: .medium)
-        text.textColor = .secondaryLabelColor
-        text.alignment = .center
-        text.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(text)
-
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        material.addSubview(bar)
         NSLayoutConstraint.activate([
-            material.leadingAnchor.constraint(equalTo: leadingAnchor),
-            material.trailingAnchor.constraint(equalTo: trailingAnchor),
-            material.topAnchor.constraint(equalTo: topAnchor),
-            material.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            text.centerXAnchor.constraint(equalTo: centerXAnchor),
-            text.centerYAnchor.constraint(equalTo: centerYAnchor),
-            text.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
+            bar.leadingAnchor.constraint(equalTo: material.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: material.trailingAnchor),
+            bar.topAnchor.constraint(equalTo: material.topAnchor),
+            bar.bottomAnchor.constraint(equalTo: material.bottomAnchor),
         ])
+        return material
     }
+
+    // MARK: - Contents
+
+    func update(entries: [DockEntry], handlers: DockPanelHandlers) {
+        bar.onActivate = handlers.activate
+        bar.onQuit = handlers.quit
+        bar.onTogglePin = handlers.togglePin
+        bar.isPinned = handlers.isPinned
+
+        bar.update(entries: entries)
+        resizeAndReposition(itemCount: entries.count)
+    }
+
+    func updatePosition() {
+        resizeAndReposition(itemCount: nil)
+    }
+
+    // MARK: - Geometry
+
+    /// Sizes the panel to its contents, then pins it to the configured edge.
+    ///
+    /// Size and position are computed together on purpose: the panel's
+    /// position depends on how large it is, so resizing without repositioning
+    /// leaves it misaligned against its edge.
+    private func resizeAndReposition(itemCount: Int?) {
+        guard let screen = SystemDisplayProvider.screen(for: displayID) else { return }
+
+        let size = itemCount.map {
+            DockBarView.size(forItemCount: $0, isVertical: edge.isVertical)
+        } ?? frame.size
+
+        setFrame(Self.frame(for: size, edge: edge, on: screen), display: true)
+    }
+
+    /// Places a panel of `size` against `edge` of `screen`.
+    ///
+    /// `visibleFrame` rather than `frame`, so the dock clears the menu bar and
+    /// the system Dock instead of hiding underneath them.
+    ///
+    /// Coordinates are global and origin is bottom-left, so `minY` is the
+    /// bottom edge and `maxY` the top. Each screen has its own offset within
+    /// that global space, which is why every edge is expressed relative to
+    /// `area` and never to zero.
+    static func frame(for size: NSSize, edge: DockEdge, on screen: NSScreen) -> NSRect {
+        let area = screen.visibleFrame
+
+        switch edge {
+        case .bottom:
+            return NSRect(
+                x: area.midX - size.width / 2,
+                y: area.minY + margin,
+                width: size.width,
+                height: size.height
+            )
+        case .top:
+            return NSRect(
+                x: area.midX - size.width / 2,
+                y: area.maxY - size.height - margin,
+                width: size.width,
+                height: size.height
+            )
+        case .left:
+            return NSRect(
+                x: area.minX + margin,
+                y: area.midY - size.height / 2,
+                width: size.width,
+                height: size.height
+            )
+        case .right:
+            return NSRect(
+                x: area.maxX - size.width - margin,
+                y: area.midY - size.height / 2,
+                width: size.width,
+                height: size.height
+            )
+        }
+    }
+}
+
+/// Callbacks a panel invokes on user action.
+///
+/// Grouped into one value so the panel takes a single collaborator rather
+/// than four loose closures.
+@MainActor
+struct DockPanelHandlers {
+    let activate: (ApplicationInfo) -> Void
+    let quit: (ApplicationInfo) -> Void
+    let togglePin: (ApplicationInfo) -> Void
+    let isPinned: (ApplicationInfo) -> Bool
 }

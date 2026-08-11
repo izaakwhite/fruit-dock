@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = DockCoordinator(
             displayProvider: displayProvider,
+            applicationProvider: SystemApplicationProvider(),
             store: UserDefaultsConfigurationStore()
         )
 
@@ -72,6 +73,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edgeItem.submenu = edgeMenu
         menu.addItem(edgeItem)
 
+        let runningItem = NSMenuItem(
+            title: "Show Running Apps",
+            action: #selector(toggleShowsRunningApps(_:)),
+            keyEquivalent: ""
+        )
+        runningItem.target = self
+        runningItem.state = coordinator.configuration.showsRunningApps ? .on : .off
+        menu.addItem(runningItem)
+
         menu.addItem(.separator())
         menu.addItem(
             withTitle: "Quit fruit-dock",
@@ -88,6 +98,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func selectEdge(_ sender: NSMenuItem) {
         guard let edge = sender.representedObject as? DockEdge else { return }
         coordinator.setEdge(edge)
+    }
+
+    @objc private func toggleShowsRunningApps(_ sender: NSMenuItem) {
+        coordinator.setShowsRunningApps(sender.state == .off)
     }
 }
 

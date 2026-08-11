@@ -1,6 +1,9 @@
 /// Which edge of a display the dock is pinned to.
 public enum DockEdge: String, Codable, Sendable, CaseIterable {
     case bottom, left, right, top
+
+    /// Left and right edges stack icons vertically.
+    public var isVertical: Bool { self == .left || self == .right }
 }
 
 /// User-facing settings, persisted across launches.
@@ -26,21 +29,33 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
     /// Icon edge length in points, before any hover magnification.
     public var iconSize: Double
 
+    /// Apps the user pinned, in the order they arranged them. FR-3.1.
+    public var pinnedItems: [DockItem]
+
+    /// Whether running-but-unpinned apps appear after the pinned ones. FR-3.4.
+    public var showsRunningApps: Bool
+
     public init(
         schemaVersion: Int = DockConfiguration.currentSchemaVersion,
         disabledDisplays: Set<DisplayID> = [],
         edge: DockEdge = .bottom,
-        iconSize: Double = 48
+        iconSize: Double = 48,
+        pinnedItems: [DockItem] = [],
+        showsRunningApps: Bool = true
     ) {
         self.schemaVersion = schemaVersion
         self.disabledDisplays = disabledDisplays
         self.edge = edge
         self.iconSize = iconSize
+        self.pinnedItems = pinnedItems
+        self.showsRunningApps = showsRunningApps
     }
 
     /// Sane fallback when nothing has been persisted, or when persisted data
     /// cannot be read.
     public static let `default` = DockConfiguration()
+
+    // MARK: - Display enablement
 
     public func isEnabled(_ display: DisplayID) -> Bool {
         !disabledDisplays.contains(display)
@@ -52,5 +67,47 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
         } else {
             disabledDisplays.insert(display)
         }
+    }
+
+    // MARK: - Pinning
+
+    public func isPinned(_ bundleIdentifier: String) -> Bool {
+        pinnedItems.contains { $0.bundleIdentifier == bundleIdentifier }
+    }
+
+    public mutating func pin(_ application: ApplicationInfo) {
+        guard !isPinned(application.bundleIdentifier) else { return }
+        pinnedItems.append(DockItem(application))
+    }
+
+    public mutating func unpin(_ bundleIdentifier: String) {
+        pinnedItems.removeAll { $0.bundleIdentifier == bundleIdentifier }
+    }
+
+    // MARK: - Decoding
+
+    /// Decoded field by field with defaults rather than relying on the
+    /// synthesized initialiser.
+    ///
+    /// Settings written by an older build are missing any key added since.
+    /// Synthesized `Codable` treats a missing key as an error, which would
+    /// throw away every setting the user had — so each field falls back to its
+    /// default instead. This is what makes adding a field a non-event.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = DockConfiguration()
+
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
+            ?? fallback.schemaVersion
+        disabledDisplays = try container.decodeIfPresent(Set<DisplayID>.self, forKey: .disabledDisplays)
+            ?? fallback.disabledDisplays
+        edge = try container.decodeIfPresent(DockEdge.self, forKey: .edge)
+            ?? fallback.edge
+        iconSize = try container.decodeIfPresent(Double.self, forKey: .iconSize)
+            ?? fallback.iconSize
+        pinnedItems = try container.decodeIfPresent([DockItem].self, forKey: .pinnedItems)
+            ?? fallback.pinnedItems
+        showsRunningApps = try container.decodeIfPresent(Bool.self, forKey: .showsRunningApps)
+            ?? fallback.showsRunningApps
     }
 }
