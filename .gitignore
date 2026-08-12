@@ -17,6 +17,12 @@ xcuserdata/
 .vscode/
 .idea/
 
+# Agent worktrees and local tooling state
+.claude/
+
+# Assembled .app bundle — a build product, rebuilt by Scripts/make-app-bundle.sh
+build/
+
 # Signing / secrets — never commit
 *.p12
 *.mobileprovision
