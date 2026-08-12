@@ -262,20 +262,17 @@ Tracked as GitHub issues; summarised here so this file stays the single place to
 
 | # | Item | Severity | Note |
 |---|---|---|---|
-| [#1](https://github.com/izaakwhite/fruit-dock/issues/1) | Dock bar should behave like the macOS menu bar | 🟡 | **Needs a decision first** — see below |
+| [#1](https://github.com/izaakwhite/fruit-dock/issues/1) | Dock bar should behave like the macOS menu bar | 🟢 | Decided — see below. Coexist/replace now exposed as a user setting |
 | [#2](https://github.com/izaakwhite/fruit-dock/issues/2) | Guarantee windows open on the clicked display | 🔴 | Partially built, never observed working |
 | [#3](https://github.com/izaakwhite/fruit-dock/issues/3) | Hover behaviour should match Apple's Dock | 🟡 | Current values chosen by eye, not measured |
 | [#4](https://github.com/izaakwhite/fruit-dock/issues/4) | Liquid Glass support (macOS 26) | 🟡 | **Research required** — post-dates training data |
 | [#5](https://github.com/izaakwhite/fruit-dock/issues/5) | Coverage for `FruitDockApp` | 🔴 | ~70% of the code is unmeasured |
 
-### 🟡 #1 conflicts with an existing decision
+### 🟢 #1 decided: coexist by default, dynamically, and it's a user choice
 
-"Behave like the menu bar" and "never render two docks on one screen" pull in opposite directions. The menu bar *does* appear on every display, including the one with the Dock. Two readings:
+"Behave like the menu bar" and "never render two docks on one screen" pulled in opposite directions. Resolved 2026-08-12: **coexist** is the default — never render on the display Apple's Dock currently occupies, and follow it live as it moves, so every display keeps exactly one dock. This is not new behaviour so much as newly-confirmed behaviour: `DockCoordinator`'s existing display-change wiring (`SystemDisplayProvider`'s 500ms Dock-location poll → `refreshDisplays()` → `DisplayReconciler.plan`) already does this correctly and is already covered by `DockCoordinatorTests` — "Our dock trades places when the system Dock moves". Nothing in the reconciliation logic needed to change.
 
-- **(a)** Keep skipping the system Dock's display — every screen gets exactly one dock *(current behaviour, and what was explicitly asked for earlier)*
-- **(b)** Render everywhere, matching the menu bar literally, accepting two docks on one screen
-
-`avoidsSystemDockDisplay` can already express either. Resolve before building.
+What *was* missing: a way for the user to choose reading **(b)** instead — render everywhere, matching the menu bar literally, accepting two docks on one screen. `avoidsSystemDockDisplay` could already express either value, and `setAvoidsSystemDockDisplay(_:)` and the "Skip Display with macOS Dock" menu checkbox already wrote it, and this too is already covered — "Turning off Dock avoidance reclaims that display". Added in the #1 PR: `PreferencesWindowController`, a proper settings window presenting the same choice as an explicit Coexist/Replace decision (`SystemDockRelationship`), reachable via a new "fruit-dock Settings…" (⌘,) menu item, alongside the existing checkbox — both read and write the same `avoidsSystemDockDisplay`, so neither can drift from the other.
 
 ### 🔴 #2 cannot be a literal guarantee
 
