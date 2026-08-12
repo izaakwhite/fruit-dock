@@ -189,6 +189,37 @@ Use `String(localized:)` from the first UI commit even though only English ships
 
 ---
 
+## Feature requests
+
+Tracked as GitHub issues; summarised here so this file stays the single place to look. Added 2026-08-12.
+
+| # | Item | Severity | Note |
+|---|---|---|---|
+| [#1](https://github.com/izaakwhite/fruit-dock/issues/1) | Dock bar should behave like the macOS menu bar | 🟡 | **Needs a decision first** — see below |
+| [#2](https://github.com/izaakwhite/fruit-dock/issues/2) | Guarantee windows open on the clicked display | 🔴 | Partially built, never observed working |
+| [#3](https://github.com/izaakwhite/fruit-dock/issues/3) | Hover behaviour should match Apple's Dock | 🟡 | Current values chosen by eye, not measured |
+| [#4](https://github.com/izaakwhite/fruit-dock/issues/4) | Liquid Glass support (macOS 26) | 🟡 | **Research required** — post-dates training data |
+| [#5](https://github.com/izaakwhite/fruit-dock/issues/5) | Coverage for `FruitDockApp` | 🔴 | ~70% of the code is unmeasured |
+
+### 🟡 #1 conflicts with an existing decision
+
+"Behave like the menu bar" and "never render two docks on one screen" pull in opposite directions. The menu bar *does* appear on every display, including the one with the Dock. Two readings:
+
+- **(a)** Keep skipping the system Dock's display — every screen gets exactly one dock *(current behaviour, and what was explicitly asked for earlier)*
+- **(b)** Render everywhere, matching the menu bar literally, accepting two docks on one screen
+
+`avoidsSystemDockDisplay` can already express either. Resolve before building.
+
+### 🔴 #2 cannot be a literal guarantee
+
+Placement depends on Accessibility permission the user can decline, on apps that may refuse to move, and on windows that cannot be moved at all (full-screen, minimised). The achievable goal is **reliable best-effort with visible failure** rather than a silent no-op — never a guarantee. Failing to place must not mean failing to switch.
+
+### 🟡 #4 must not regress T8 Tier 1
+
+Whatever Liquid Glass turns out to be, Reduce Transparency still wins. A user who asked the system for less transparency must get a solid background.
+
+---
+
 ## Commercial / licensing
 
 Created by the B1 decision (2026-08-11).
