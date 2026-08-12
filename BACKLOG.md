@@ -57,6 +57,8 @@ Spend ten minutes confirming the native gesture doesn't already cover your actua
 
 SRS says "macOS 14+"; dev machine is 26.5.2. Supporting 14+ spans the Liquid Glass design break and roughly triples visual QA. Roadmap assumes 26+ (assumption A3). Confirm or reverse.
 
+**Still open after #4 (2026-08-12).** Liquid Glass adoption did not force this decision: `NSGlassEffectView` is guarded behind `@available(macOS 26, *)` with the pre-existing `NSVisualEffectView` material as the fallback on 15–25, so `Package.swift` stays at `.v15`. That sidesteps B5 rather than answering it — the two material code paths now both need visual QA on every future change, which is exactly the cost this item is about.
+
 ---
 
 ## Environment blockers
@@ -282,6 +284,8 @@ Placement depends on Accessibility permission the user can decline, on apps that
 ### 🟡 #4 must not regress T8 Tier 1
 
 Whatever Liquid Glass turns out to be, Reduce Transparency still wins. A user who asked the system for less transparency must get a solid background.
+
+**Addressed in code 2026-08-12, unverified on hardware.** `NSGlassEffectView` is real (confirmed against live Apple docs, not assumed — see the #4 PR description for sources) and is now adopted in `DockPanel` and `HoverLabelPanel`, gated behind `@available(macOS 26, *)` with the existing `NSVisualEffectView` path retained for 15–25. The Reduce Transparency check runs first in both files and short-circuits to the solid-fill path regardless of OS version, so it wins over both materials, not just the old one. `HoverLabelPanel` previously had no Reduce Transparency handling at all — that gap is closed here too, and `DockPanel.refreshAppearance()` now rebuilds the hover label as well as the dock itself so a live toggle reaches both windows. None of this has been seen running: this container has no Swift toolchain, so it is unverified in light mode, dark mode, and under Reduce Transparency/Increase Contrast, on real hardware.
 
 ---
 

@@ -8,10 +8,11 @@ import FruitDockCore
 @MainActor
 final class HoverLabelPanel: NSPanel {
     private let label = NSTextField(labelWithString: "")
-    private let background = NSVisualEffectView()
+    private var background: NSView?
 
     private static let horizontalPadding: CGFloat = 10
     private static let verticalPadding: CGFloat = 5
+    private static let cornerRadius: CGFloat = 6
     /// Distance between the label and the icon it describes.
     private static let gap: CGFloat = 8
 
@@ -37,29 +38,98 @@ final class HoverLabelPanel: NSPanel {
         label.font = .systemFont(ofSize: 12, weight: .medium)
         label.textColor = .labelColor
         label.alignment = .center
+
+        contentView = makeContentView()
+        alphaValue = 0
+    }
+
+    // MARK: - Appearance
+
+    private func makeContentView() -> NSView {
+        let container = Self.makeBackground(embedding: label)
+        background = container
+        return container
+    }
+
+    /// Rebuilds the background after an accessibility setting changes.
+    ///
+    /// This label previously never checked Reduce Transparency at all — see
+    /// PR description. Fixing that here, alongside Liquid Glass adoption,
+    /// closes that gap rather than propagating it into a third material.
+    func refreshAppearance() {
+        contentView = makeContentView()
+    }
+
+    /// Liquid Glass on macOS 26+, `.toolTip` material below that, and a solid
+    /// fill under Reduce Transparency regardless of OS version — matching
+    /// `DockPanel.makeBackgroundView()`. See backlog T8 Tier 1.
+    private static func makeBackground(embedding label: NSView) -> NSView {
+        let radius = cornerRadius
+
+        if SystemAppearance.reducesTransparency {
+            return solidBackground(radius: radius, embedding: label)
+        }
+        if #available(macOS 26, *) {
+            return glassBackground(radius: radius, embedding: label)
+        }
+        return toolTipBackground(radius: radius, embedding: label)
+    }
+
+    private static func solidBackground(radius: CGFloat, embedding label: NSView) -> NSView {
+        let solid = NSView()
+        solid.wantsLayer = true
+        solid.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        solid.layer?.cornerRadius = radius
+        solid.layer?.masksToBounds = true
+        embedWithPadding(label, in: solid)
+        return solid
+    }
+
+    private static func toolTipBackground(radius: CGFloat, embedding label: NSView) -> NSView {
+        let material = NSVisualEffectView()
+        material.material = .toolTip
+        material.blendingMode = .behindWindow
+        material.state = .active
+        material.wantsLayer = true
+        material.layer?.cornerRadius = radius
+        material.layer?.masksToBounds = true
+        embedWithPadding(label, in: material)
+        return material
+    }
+
+    /// See the equivalent note in `DockPanel.glassBackground` about using
+    /// `contentView` rather than `addSubview`. The label needs padding that
+    /// `contentView`'s edge-to-edge Auto Layout tie doesn't provide on its
+    /// own, so the padding lives in an intermediate plain view that becomes
+    /// the glass's `contentView`.
+    @available(macOS 26, *)
+    private static func glassBackground(radius: CGFloat, embedding label: NSView) -> NSView {
+        let glass = NSGlassEffectView()
+        glass.style = .regular
+        glass.cornerRadius = radius
+        glass.contentView = paddedWrapper(around: label)
+        return glass
+    }
+
+    private static func paddedWrapper(around label: NSView) -> NSView {
+        let wrapper = NSView()
+        embedWithPadding(label, in: wrapper)
+        return wrapper
+    }
+
+    private static func embedWithPadding(_ label: NSView, in container: NSView) {
         label.translatesAutoresizingMaskIntoConstraints = false
-
-        background.material = .toolTip
-        background.blendingMode = .behindWindow
-        background.state = .active
-        background.wantsLayer = true
-        background.layer?.cornerRadius = 6
-        background.layer?.masksToBounds = true
-        background.addSubview(label)
-
+        container.addSubview(label)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(
-                equalTo: background.leadingAnchor, constant: Self.horizontalPadding),
+                equalTo: container.leadingAnchor, constant: horizontalPadding),
             label.trailingAnchor.constraint(
-                equalTo: background.trailingAnchor, constant: -Self.horizontalPadding),
+                equalTo: container.trailingAnchor, constant: -horizontalPadding),
             label.topAnchor.constraint(
-                equalTo: background.topAnchor, constant: Self.verticalPadding),
+                equalTo: container.topAnchor, constant: verticalPadding),
             label.bottomAnchor.constraint(
-                equalTo: background.bottomAnchor, constant: -Self.verticalPadding),
+                equalTo: container.bottomAnchor, constant: -verticalPadding),
         ])
-
-        contentView = background
-        alphaValue = 0
     }
 
     /// Shows `text` adjacent to `iconFrame`, which must be in screen
