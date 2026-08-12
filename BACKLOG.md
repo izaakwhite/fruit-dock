@@ -179,12 +179,68 @@ Current workaround is a 500ms poll, scheduled only while more than one display i
 
 Revisit if a real notification is ever found. Any future code that assumes screen-parameter notifications cover Dock movement will have this same bug.
 
-### 🟡 T11 — Reading `com.apple.dock` returns nothing under App Sandbox
+### 🔴 T11 — No window has been observed moving
+**Phase:** 3 · **Added 2026-08-11**
+
+`WindowPlacer` has never been seen to reposition anything. It cannot be: the assistant that wrote it cannot launch a GUI app, click a dock icon, or grant Accessibility permission, and the whole feature is gated on a permission that only a human can give. The likeliest explanation for the original "it does nothing" report was simply that permission was never granted, which the code then swallowed in a silent `guard`. That guard now prompts and the menu reports the state, but **whether a window ever lands on the clicked display remains entirely unverified.**
+
+The arithmetic and the which-window rule were extracted into `FruitDockCore` (`WindowGeometry`, `WindowPlacementRules`) and are covered by tests with literal coordinates. That covers being *wrong*; it says nothing about being *wired*, which is the T9 lesson.
+
+Worth confirming by hand, in this order:
+
+- Grant permission and check the menu item flips to "Opening Apps on the Clicked Display" with a checkmark.
+- Click a single-window app's icon on the second display — does its window arrive?
+- Click a multi-window app's icon. Only the frontmost window should move; the rest must stay put.
+- Repeat on a display *above* or *below* the primary, not merely beside it. Everything vertical is where the coordinate flip bites, and a side-by-side arrangement of equal-height displays hides it.
+- Click the same app on two displays in quick succession; the window should end on the second, not oscillate.
+
+**Read T13 first — it may make all of the above impossible to test as things stand.**
+
+### 🔴 T13 — Accessibility permission cannot survive a code change
+**Phase:** 3 · **Added 2026-08-11 · Partly CONFIRMED 2026-08-12**
+
+The agent's original diagnosis was right, and the signing half is now measured rather than suspected.
+
+`swift run FruitDockApp` produces a bare, ad-hoc-signed Mach-O in `.build/` with an identifier derived from the binary itself:
+
+```
+Identifier=FruitDockApp-5555494492c65f84580d3753b69778598c4c2a47
+Signature=adhoc    TeamIdentifier=not set
+```
+
+**Partial fix shipped.** `Scripts/make-app-bundle.sh` and `Resources/Info.plist` build a real `.app` at a fixed path with a fixed `CFBundleIdentifier` (`com.izaakwhite.fruit-dock`), signed with an explicit `--identifier`. That half is solved and verified.
+
+**What is still broken, measured directly:**
+
+| Scenario | CDHash |
+|---|---|
+| Rebuild, no source change | unchanged ✅ |
+| Rebuild after a comment-only edit | unchanged ✅ |
+| **Rebuild after a real code change** | **changes** ❌ |
+
+Swift's build is deterministic, so an unchanged binary keeps its hash — but any edit that alters codegen produces a new one. If TCC keys Accessibility on the code directory hash (likely for ad-hoc signatures, since there is no stable certificate to key on instead), **the grant lapses on every meaningful build**, silently, with the entry still ticked in System Settings.
+
+Not yet confirmed end to end: nobody has granted permission, seen placement work, changed code, rebuilt, and watched it stop. That experiment is the remaining unknown, and it is cheap.
+
+**Likely real fix:** sign with a stable identity rather than ad-hoc. A free Apple Development certificate is enough and does not need the $99 account (see E2). Phase 7 wants proper signing regardless.
+
+**Implication for T11:** every by-hand verification step listed there must be run against `build/fruit-dock.app`, never `swift run`, and permission re-granted after any rebuild until this is resolved.
+
+### 🟡 T14 — Reading `com.apple.dock` returns nothing under App Sandbox
 **Phase:** 7 · **Depends on:** T5 · **Added 2026-08-11**
+
+*(Renumbered from T11 — both agents independently claimed that number.)*
 
 Dock import, the recents section, and the `show-recents` seed all read another application's defaults domain. Unsandboxed that is an ordinary read and works. Inside the App Sandbox, `UserDefaults(suiteName: "com.apple.dock")` resolves against our own container instead and comes back empty, with no error to distinguish that from a Mac whose Dock is genuinely bare. Scanning `/Applications` has the same shape.
 
 The failure is silent, which is what makes it worth recording: three features would quietly become no-ops rather than complain. Assumption A1 already rules out the Mac App Store for unrelated reasons, so this only bites if sandboxing is ever revisited — at which point it needs either a temporary-exception entitlement or code that detects the empty case and says so, instead of showing an empty menu.
+
+### 🟡 T12 — Full-screen detection relies on an undocumented attribute
+**Phase:** 3 · **Added 2026-08-11**
+
+`WindowPlacer` reads `AXFullScreen` to avoid trying to move a window that owns its own Space. There is no `kAX…` constant for it — the name is convention among window managers, not published API, and Apple could drop it.
+
+Failure is benign by construction: an absent attribute reads as "not full-screen", and the `AXUIElementIsAttributeSettable` check is expected to reject the move anyway. So this degrades to a redundant belt rather than a broken feature. Recorded because a future reader will wonder why one attribute in that file is a string literal.
 
 ### 🟢 T6 — Config schema versioning
 **Phase:** 4

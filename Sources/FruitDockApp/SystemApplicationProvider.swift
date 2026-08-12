@@ -8,6 +8,11 @@ import FruitDockCore
 final class SystemApplicationProvider: ApplicationProviding {
     private var changeHandler: (() -> Void)?
     private var observers: [NSObjectProtocol] = []
+    private let placer: WindowPlacer
+
+    init(accessibility: AccessibilityPermission) {
+        self.placer = WindowPlacer(permission: accessibility)
+    }
 
     var runningApplications: [ApplicationInfo] {
         let ownPID = ProcessInfo.processInfo.processIdentifier
@@ -46,37 +51,54 @@ final class SystemApplicationProvider: ApplicationProviding {
             NSWorkspace.didTerminateApplicationNotification,
             NSWorkspace.didActivateApplicationNotification,
         ].map { name in
-            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                // Read out here, and only the pid crosses: `Notification` is
+                // not `Sendable`, so it cannot be touched inside the isolated
+                // block.
+                let terminated =
+                    name == NSWorkspace.didTerminateApplicationNotification
+                    ? (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                        .processIdentifier
+                    : nil
+
                 MainActor.assumeIsolated {
+                    if let terminated {
+                        // A retry chain outliving its process would go on
+                        // interrogating the Accessibility API about a pid that
+                        // no longer exists, and pids get reused.
+                        self?.placer.cancelRetries(for: terminated)
+                    }
                     self?.changeHandler?()
                 }
             }
         }
     }
 
+    /// Activation comes first and unconditionally; placement is appended to it
+    /// and can fail freely. Without Accessibility permission this method still
+    /// does everything it did before the feature existed.
     func activateOrLaunch(_ application: ApplicationInfo, on displayID: DisplayID?) {
         if let running = runningApplication(for: application.bundleIdentifier) {
             running.activate()
-            // Placement is best-effort; the app is already frontmost either way.
             if let displayID {
-                WindowPlacer.place(pid: running.processIdentifier, onto: displayID)
+                placer.place(pid: running.processIdentifier, onto: displayID)
             }
             return
         }
 
         let url = URL(fileURLWithPath: application.path)
-        NSWorkspace.shared.openApplication(at: url, configuration: .init()) { app, error in
+        NSWorkspace.shared.openApplication(at: url, configuration: .init()) { [weak self] app, error in
             if let error {
                 NSLog("fruit-dock: could not launch \(application.name) — \(error)")
                 return
             }
+            // Only the pid crosses the queue hop: `NSRunningApplication` is not
+            // `Sendable`, and this completion arrives on an arbitrary queue.
             guard let displayID, let pid = app?.processIdentifier else { return }
 
-            // A just-launched app has no windows yet, so `place` retries until
-            // one appears or it gives up.
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    WindowPlacer.place(pid: pid, onto: displayID)
+                    self?.placer.place(pid: pid, onto: displayID)
                 }
             }
         }

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>FruitDockApp</string>
+
+	<!-- Stable, and deliberately so. TCC keys Accessibility grants to this
+	     identity; a bundle identifier that changes between builds is a new
+	     application as far as macOS is concerned, and the grant silently
+	     stops applying. Never change this casually. -->
+	<key>CFBundleIdentifier</key>
+	<string>com.izaakwhite.fruit-dock</string>
+
+	<key>CFBundleName</key>
+	<string>fruit-dock</string>
+	<key>CFBundleDisplayName</key>
+	<string>fruit-dock</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+
+	<!-- Menu-bar agent: no Dock icon, no app-switcher entry. FR-5.1.
+	     `main.swift` also sets this at runtime via setActivationPolicy, which
+	     is what makes the bare executable behave during development; this key
+	     is what makes the bundle behave before any code runs. -->
+	<key>LSUIElement</key>
+	<true/>
+
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+</dict>
+</plist>
