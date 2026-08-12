@@ -120,6 +120,105 @@ struct DockContentBuilderTests {
         #expect(!apps(elements).contains(finder))
     }
 
+    // MARK: - Recent apps
+
+    @Test("Recent apps form their own section after the running ones")
+    func recentsFollowRunningBehindSeparator() {
+        // A tile the user never chose must not read as one they did, so the
+        // section is divided rather than merged into the run of icons.
+        let elements = DockContentBuilder.elements(
+            pinned: [DockItem(safari)],
+            running: [terminal],
+            recents: [notes],
+            showsRunningApps: true,
+            showsRecentApps: true,
+            showsTrash: false
+        )
+
+        #expect(apps(elements) == [safari, terminal, notes])
+        #expect(elements[2] == .separator)
+        // Recents are not pinned, whatever else they are.
+        #expect(elements.last?.entry?.isPinned == false)
+    }
+
+    @Test("A recent app that is already pinned is not shown twice")
+    func recentAlreadyPinnedIsSkipped() {
+        let elements = DockContentBuilder.elements(
+            pinned: [DockItem(safari)],
+            running: [],
+            recents: [safari, notes],
+            showsRunningApps: true,
+            showsRecentApps: true
+        )
+
+        #expect(apps(elements) == [safari, notes])
+    }
+
+    @Test("A recent app that is running is not shown twice")
+    func recentAlreadyRunningIsSkipped() {
+        let elements = DockContentBuilder.elements(
+            pinned: [],
+            running: [terminal],
+            recents: [terminal],
+            showsRunningApps: true,
+            showsRecentApps: true,
+            showsTrash: false
+        )
+
+        #expect(apps(elements) == [terminal])
+        #expect(!elements.contains(.separator))
+    }
+
+    @Test("The same app listed twice in recents appears once")
+    func duplicateRecentsCollapse() {
+        let elements = DockContentBuilder.elements(
+            pinned: [], running: [], recents: [notes, notes],
+            showsRunningApps: true, showsRecentApps: true, showsTrash: false)
+
+        #expect(apps(elements) == [notes])
+    }
+
+    @Test("A recent app that is running still gets a running indicator")
+    func recentRunningAppIsMarkedRunning() {
+        // Reachable when the running section is off: the app is running, and
+        // an indicator that lied about it would be worse than no section.
+        let elements = DockContentBuilder.elements(
+            pinned: [], running: [terminal], recents: [terminal],
+            showsRunningApps: false, showsRecentApps: true)
+
+        #expect(elements.first?.entry?.isRunning == true)
+    }
+
+    @Test("Recents are hidden when the section is switched off")
+    func recentsHiddenWhenDisabled() {
+        let elements = DockContentBuilder.elements(
+            pinned: [DockItem(safari)], running: [], recents: [notes],
+            showsRunningApps: true, showsRecentApps: false, showsTrash: false)
+
+        #expect(apps(elements) == [safari])
+        #expect(!elements.contains(.separator))
+    }
+
+    @Test("An empty recents list draws no separator")
+    func emptyRecentsDrawNoSeparator() {
+        // A divider with nothing after it is a stray line, which is what a Mac
+        // with no recent apps would otherwise get.
+        let elements = DockContentBuilder.elements(
+            pinned: [DockItem(safari)], running: [], recents: [],
+            showsRunningApps: true, showsRecentApps: true, showsTrash: false)
+
+        #expect(elements == [.app(DockEntry(application: safari, isPinned: true, isRunning: false))])
+    }
+
+    @Test("Recents on an otherwise empty dock draw no leading separator")
+    func recentsOnEmptyDockDrawNoLeadingSeparator() {
+        let elements = DockContentBuilder.elements(
+            pinned: [], running: [], recents: [notes],
+            showsRunningApps: true, showsRecentApps: true, showsTrash: false)
+
+        #expect(elements == [.app(DockEntry(application: notes, isPinned: false, isRunning: false))])
+    }
+
     // MARK: - Separator and Trash
 
     @Test("Trash is last, behind a separator")

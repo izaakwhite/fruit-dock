@@ -35,6 +35,14 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
     /// Whether running-but-unpinned apps appear after the pinned ones. FR-3.4.
     public var showsRunningApps: Bool
 
+    /// Whether the recently-used apps section appears after the running ones.
+    ///
+    /// Off in the struct's own defaults, and seeded on first launch from the
+    /// system Dock's `show-recents` — a user who turned recents off there has
+    /// already said what they want, and a section nobody asked for appearing
+    /// after an upgrade is worse than one they have to switch on.
+    public var showsRecentApps: Bool
+
     /// Whether to leave the display that currently hosts Apple's Dock alone.
     ///
     /// On by default. Two docks on one screen is redundant and confusing, and
@@ -50,6 +58,7 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
         iconSize: Double = 48,
         pinnedItems: [DockItem] = [],
         showsRunningApps: Bool = true,
+        showsRecentApps: Bool = false,
         avoidsSystemDockDisplay: Bool = true
     ) {
         self.schemaVersion = schemaVersion
@@ -58,6 +67,7 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
         self.iconSize = iconSize
         self.pinnedItems = pinnedItems
         self.showsRunningApps = showsRunningApps
+        self.showsRecentApps = showsRecentApps
         self.avoidsSystemDockDisplay = avoidsSystemDockDisplay
     }
 
@@ -119,6 +129,8 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
             ?? fallback.pinnedItems
         showsRunningApps = try container.decodeIfPresent(Bool.self, forKey: .showsRunningApps)
             ?? fallback.showsRunningApps
+        showsRecentApps = try container.decodeIfPresent(Bool.self, forKey: .showsRecentApps)
+            ?? fallback.showsRecentApps
         avoidsSystemDockDisplay = try container.decodeIfPresent(Bool.self, forKey: .avoidsSystemDockDisplay)
             ?? fallback.avoidsSystemDockDisplay
     }

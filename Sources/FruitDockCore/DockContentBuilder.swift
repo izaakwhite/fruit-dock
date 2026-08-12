@@ -57,13 +57,17 @@ public enum DockContentBuilder {
     ///   - pinned: user-pinned apps, in user order. Order is preserved —
     ///     a dock that reshuffles itself is unusable.
     ///   - running: apps currently running, from the system.
+    ///   - recents: recently used apps, from Apple's Dock, most recent first.
     ///   - showsRunningApps: whether unpinned running apps appear after the
     ///     pinned ones. FR-3.4.
+    ///   - showsRecentApps: whether the recents section appears at all.
     ///   - showsTrash: whether the separator and Trash are appended.
     public static func elements(
         pinned: [DockItem],
         running: [ApplicationInfo],
+        recents: [ApplicationInfo] = [],
         showsRunningApps: Bool,
+        showsRecentApps: Bool = false,
         showsTrash: Bool = true
     ) -> [DockElement] {
         let runningIDs = Set(running.map(\.bundleIdentifier))
@@ -103,6 +107,32 @@ public enum DockContentBuilder {
         }
 
         var elements = apps.map(DockElement.app)
+
+        // Recents are a section of their own, behind a separator, so a tile
+        // the user never chose to put there cannot be mistaken for one they
+        // did. Anything already placed above is skipped rather than repeated:
+        // an app that is pinned or running is on the dock already, and Apple's
+        // Dock likewise never lists it twice.
+        if showsRecentApps {
+            let recentEntries = recents
+                .filter { seen.insert($0.bundleIdentifier).inserted }
+                .map { application in
+                    DockElement.app(
+                        DockEntry(
+                            application: application,
+                            isPinned: false,
+                            isRunning: runningIDs.contains(application.bundleIdentifier)
+                        )
+                    )
+                }
+            if !recentEntries.isEmpty {
+                // A separator with nothing before it is a stray line, which is
+                // what an empty dock with recents would otherwise draw.
+                if !elements.isEmpty { elements.append(.separator) }
+                elements.append(contentsOf: recentEntries)
+            }
+        }
+
         if showsTrash {
             elements.append(.separator)
             elements.append(.trash)

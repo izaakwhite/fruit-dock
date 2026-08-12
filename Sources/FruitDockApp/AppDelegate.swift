@@ -15,10 +15,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let displayProvider = SystemDisplayProvider()
     private let presenter = PanelPresenter()
 
+    /// Populated only when it is about to open, so the filesystem scan behind
+    /// it is not charged to every click of the status item — the menu people
+    /// open to toggle a display should not wait on a directory listing.
+    private let applicationsMenu = NSMenu()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = DockCoordinator(
             displayProvider: displayProvider,
             applicationProvider: SystemApplicationProvider(),
+            systemDock: SystemDockDefaultsReader(),
+            applicationCatalog: InstalledApplicationScanner(),
             store: UserDefaultsConfigurationStore(),
             presenter: presenter
         )
@@ -46,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.delegate = self
+        applicationsMenu.delegate = self
         statusItem.menu = menu
     }
 
@@ -90,10 +98,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         addToggle(
             to: menu,
+            title: "Show Recent Apps",
+            isOn: coordinator.configuration.showsRecentApps,
+            action: #selector(toggleShowsRecentApps(_:))
+        )
+        addToggle(
+            to: menu,
             title: "Skip Display with macOS Dock",
             isOn: coordinator.configuration.avoidsSystemDockDisplay,
             action: #selector(toggleAvoidsSystemDock(_:))
         )
+
+        menu.addItem(.separator())
+
+        let browseItem = NSMenuItem(title: "Applications", action: nil, keyEquivalent: "")
+        browseItem.submenu = applicationsMenu
+        menu.addItem(browseItem)
+
+        let importItem = NSMenuItem(
+            title: "Import from macOS Dock", action: #selector(importFromSystemDock), keyEquivalent: "")
+        importItem.target = self
+        menu.addItem(importItem)
 
         menu.addItem(.separator())
 
@@ -125,6 +150,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    /// Every installed application, filed by initial.
+    ///
+    /// Menus rather than a Launchpad-style grid: a grid is a second window to
+    /// place, dismiss, and keep from stealing focus, and it would duplicate
+    /// Launchpad, which Dock.app already owns and which cannot be replaced.
+    private func rebuildApplicationsMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+
+        for group in coordinator.installedApplicationGroups {
+            let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
+            let groupMenu = NSMenu()
+
+            for application in group.applications {
+                let item = NSMenuItem(
+                    title: application.name, action: #selector(openApplication(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = application
+                item.image = Self.menuIcon(for: application)
+                groupMenu.addItem(item)
+            }
+
+            groupItem.submenu = groupMenu
+            menu.addItem(groupItem)
+        }
+
+        if menu.items.isEmpty {
+            menu.addItem(.sectionHeader(title: "No applications found"))
+        }
+    }
+
+    /// Menu-sized rather than full-sized: `NSWorkspace` hands back a 512pt
+    /// icon, which AppKit would scale into a row three times its natural
+    /// height.
+    private static func menuIcon(for application: ApplicationInfo) -> NSImage {
+        let icon = NSWorkspace.shared.icon(forFile: application.path)
+        icon.size = NSSize(width: 16, height: 16)
+        return icon
+    }
+
     private func addToggle(to menu: NSMenu, title: String, isOn: Bool, action: Selector) {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
@@ -148,8 +212,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.setShowsRunningApps(sender.state == .off)
     }
 
+    @objc private func toggleShowsRecentApps(_ sender: NSMenuItem) {
+        coordinator.setShowsRecentApps(sender.state == .off)
+    }
+
     @objc private func toggleAvoidsSystemDock(_ sender: NSMenuItem) {
         coordinator.setAvoidsSystemDockDisplay(sender.state == .off)
+    }
+
+    @objc private func importFromSystemDock() {
+        coordinator.importFromSystemDock()
+    }
+
+    /// Opens on whichever display macOS chooses: the menu bar is not a dock,
+    /// so there is no screen the user can be said to have asked for.
+    @objc private func openApplication(_ sender: NSMenuItem) {
+        guard let application = sender.representedObject as? ApplicationInfo else { return }
+        coordinator.activate(application, on: nil)
     }
 
     @objc private func openSettingsPane(_ sender: NSMenuItem) {
@@ -160,6 +239,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
-        rebuildMenu(menu)
+        // The applications submenu is its own delegate callback so its scan of
+        // the filesystem happens when it opens, not when the status item does.
+        if menu === applicationsMenu {
+            rebuildApplicationsMenu(menu)
+        } else {
+            rebuildMenu(menu)
+        }
     }
 }

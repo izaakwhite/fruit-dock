@@ -15,13 +15,17 @@ struct DockCoordinatorTests {
     private func makeSubject(
         displays: [DisplayInfo] = [Fixture.builtIn, Fixture.external],
         running: [ApplicationInfo] = [],
-        configuration: DockConfiguration? = nil
+        configuration: DockConfiguration? = nil,
+        systemDock: FakeSystemDock = FakeSystemDock(),
+        catalog: FakeApplicationCatalog = FakeApplicationCatalog()
     ) -> (
         coordinator: DockCoordinator,
         displays: FakeDisplayProvider,
         apps: FakeApplicationProvider,
         store: FakeConfigurationStore,
-        presenter: FakePresenter
+        presenter: FakePresenter,
+        systemDock: FakeSystemDock,
+        catalog: FakeApplicationCatalog
     ) {
         let displayProvider = FakeDisplayProvider(displays)
         let appProvider = FakeApplicationProvider(running)
@@ -31,10 +35,12 @@ struct DockCoordinatorTests {
         let coordinator = DockCoordinator(
             displayProvider: displayProvider,
             applicationProvider: appProvider,
+            systemDock: systemDock,
+            applicationCatalog: catalog,
             store: store,
             presenter: presenter
         )
-        return (coordinator, displayProvider, appProvider, store, presenter)
+        return (coordinator, displayProvider, appProvider, store, presenter, systemDock, catalog)
     }
 
     // MARK: - Wiring
@@ -130,7 +136,12 @@ struct DockCoordinatorTests {
     @Test("An empty store falls back to defaults — FR-4.2")
     func fallsBackToDefaults() {
         let subject = makeSubject(configuration: nil)
-        #expect(subject.coordinator.configuration == .default)
+
+        // Every field defaults except the one seeded from the system Dock,
+        // whose absent `show-recents` means on.
+        var expected = DockConfiguration.default
+        expected.showsRecentApps = true
+        #expect(subject.coordinator.configuration == expected)
     }
 
     @Test("Disabling a display persists and removes its surface")
@@ -259,6 +270,195 @@ struct DockCoordinatorTests {
         subject.coordinator.togglePin(Fixture.safari)
 
         #expect(subject.presenter.renderedApps.isEmpty)
+    }
+
+    // MARK: - Recents
+
+    @Test("A first launch takes its recents setting from the system Dock — T8 Tier 2")
+    func recentsPreferenceIsSeededFromSystemDock() {
+        let subject = makeSubject(
+            configuration: nil, systemDock: FakeSystemDock(showsRecentApplications: false))
+
+        // Someone who turned recents off on the system Dock has already said
+        // what they want; asking again by defaulting to on would ignore it.
+        #expect(!subject.coordinator.configuration.showsRecentApps)
+    }
+
+    @Test("A stored setting outranks the system Dock's — seed, then diverge")
+    func storedRecentsPreferenceWins() {
+        var stored = DockConfiguration.default
+        stored.showsRecentApps = false
+
+        let subject = makeSubject(
+            configuration: stored, systemDock: FakeSystemDock(showsRecentApplications: true))
+
+        #expect(!subject.coordinator.configuration.showsRecentApps)
+    }
+
+    @Test("Recent apps are rendered in their own section")
+    func recentsAreRendered() {
+        var stored = DockConfiguration.default
+        stored.showsRecentApps = true
+
+        let subject = makeSubject(
+            displays: [Fixture.builtIn],
+            running: [Fixture.safari],
+            configuration: stored,
+            systemDock: FakeSystemDock(recents: [Fixture.preview])
+        )
+        subject.coordinator.start()
+
+        #expect(subject.presenter.renderedApps == [Fixture.safari, Fixture.preview])
+    }
+
+    @Test("A recent app that has been deleted is not offered")
+    func deletedRecentIsNotRendered() {
+        var stored = DockConfiguration.default
+        stored.showsRecentApps = true
+        let catalog = FakeApplicationCatalog()
+        catalog.missingPaths = [Fixture.preview.path]
+
+        let subject = makeSubject(
+            displays: [Fixture.builtIn],
+            configuration: stored,
+            systemDock: FakeSystemDock(recents: [Fixture.preview]),
+            catalog: catalog
+        )
+        subject.coordinator.start()
+
+        #expect(subject.presenter.renderedApps.isEmpty)
+    }
+
+    @Test("Recents are re-read on each refresh, not captured at launch")
+    func recentsAreRereadOnRefresh() {
+        // The Dock rewrites `recent-apps` as apps are used, so a list read
+        // once at launch is stale by the time anybody looks at the dock.
+        var stored = DockConfiguration.default
+        stored.showsRecentApps = true
+
+        let subject = makeSubject(
+            displays: [Fixture.builtIn], configuration: stored, systemDock: FakeSystemDock())
+        subject.coordinator.start()
+        #expect(subject.presenter.renderedApps.isEmpty)
+
+        subject.systemDock.setRecents([Fixture.preview])
+        subject.apps.simulateChange(to: [])
+
+        #expect(subject.presenter.renderedApps == [Fixture.preview])
+    }
+
+    @Test("Toggling recents persists and re-renders")
+    func recentsToggle() {
+        let subject = makeSubject(
+            displays: [Fixture.builtIn],
+            configuration: .default,
+            systemDock: FakeSystemDock(recents: [Fixture.preview])
+        )
+        subject.coordinator.start()
+        #expect(subject.presenter.renderedApps.isEmpty)
+
+        subject.coordinator.setShowsRecentApps(true)
+
+        #expect(subject.store.stored?.showsRecentApps == true)
+        #expect(subject.presenter.renderedApps == [Fixture.preview])
+    }
+
+    // MARK: - Importing and browsing
+
+    @Test("Importing pins the system Dock's apps in the order it holds them")
+    func importPinsInDockOrder() {
+        let subject = makeSubject(
+            displays: [Fixture.builtIn],
+            configuration: .default,
+            systemDock: FakeSystemDock(persistent: [Fixture.terminal, Fixture.safari])
+        )
+        subject.coordinator.start()
+
+        subject.coordinator.importFromSystemDock()
+
+        #expect(subject.coordinator.configuration.pinnedItems.map(\.name) == ["Terminal", "Safari"])
+        // Both halves: a setting that saves without refreshing looks broken.
+        #expect(subject.store.stored?.pinnedItems.count == 2)
+        #expect(subject.presenter.renderedApps == [Fixture.terminal, Fixture.safari])
+    }
+
+    @Test("Importing merges with existing pins rather than replacing them")
+    func importMergesWithExistingPins() {
+        // An import that wiped what the user had arranged here would be a
+        // destructive action behind an innocuous menu item.
+        var stored = DockConfiguration.default
+        stored.pin(Fixture.preview)
+
+        let subject = makeSubject(
+            displays: [Fixture.builtIn],
+            configuration: stored,
+            systemDock: FakeSystemDock(persistent: [Fixture.safari])
+        )
+        subject.coordinator.start()
+
+        subject.coordinator.importFromSystemDock()
+
+        #expect(subject.coordinator.configuration.pinnedItems.map(\.name) == ["Preview", "Safari"])
+    }
+
+    @Test("Importing an app that is already pinned does not duplicate it")
+    func importDoesNotDuplicatePins() {
+        var stored = DockConfiguration.default
+        stored.pin(Fixture.safari)
+
+        let subject = makeSubject(
+            displays: [Fixture.builtIn],
+            configuration: stored,
+            systemDock: FakeSystemDock(persistent: [Fixture.safari, Fixture.terminal])
+        )
+        subject.coordinator.start()
+
+        subject.coordinator.importFromSystemDock()
+
+        #expect(subject.coordinator.configuration.pinnedItems.map(\.name) == ["Safari", "Terminal"])
+    }
+
+    @Test("Importing skips apps the system Dock still lists but that are gone")
+    func importSkipsUninstalledApps() {
+        let catalog = FakeApplicationCatalog()
+        catalog.missingPaths = [Fixture.terminal.path]
+
+        let subject = makeSubject(
+            displays: [Fixture.builtIn],
+            configuration: .default,
+            systemDock: FakeSystemDock(persistent: [Fixture.safari, Fixture.terminal]),
+            catalog: catalog
+        )
+        subject.coordinator.start()
+
+        subject.coordinator.importFromSystemDock()
+
+        #expect(subject.coordinator.configuration.pinnedItems.map(\.name) == ["Safari"])
+    }
+
+    @Test("Importing an empty system Dock changes nothing")
+    func importFromEmptyDockIsHarmless() {
+        var stored = DockConfiguration.default
+        stored.pin(Fixture.preview)
+
+        let subject = makeSubject(
+            displays: [Fixture.builtIn], configuration: stored, systemDock: FakeSystemDock())
+        subject.coordinator.start()
+
+        subject.coordinator.importFromSystemDock()
+
+        #expect(subject.coordinator.configuration.pinnedItems.map(\.name) == ["Preview"])
+    }
+
+    @Test("Installed applications are offered for browsing, filed by initial")
+    func installedApplicationsAreBrowsable() {
+        let subject = makeSubject(
+            catalog: FakeApplicationCatalog([Fixture.terminal, Fixture.safari]))
+
+        let groups = subject.coordinator.installedApplicationGroups
+
+        #expect(groups.map(\.title) == ["S", "T"])
+        #expect(groups.first?.applications == [Fixture.safari])
     }
 
     @Test("An appearance change refreshes surfaces and contents")

@@ -13,6 +13,8 @@
 public final class DockCoordinator {
     private let displayProvider: any DisplayProviding
     private let applicationProvider: any ApplicationProviding
+    private let systemDock: any SystemDockReading
+    private let applicationCatalog: any InstalledApplicationProviding
     private let store: any ConfigurationStoring
     private let presenter: any DockPresenting
 
@@ -21,15 +23,31 @@ public final class DockCoordinator {
     public init(
         displayProvider: any DisplayProviding,
         applicationProvider: any ApplicationProviding,
+        systemDock: any SystemDockReading,
+        applicationCatalog: any InstalledApplicationProviding,
         store: any ConfigurationStoring,
         presenter: any DockPresenting
     ) {
         self.displayProvider = displayProvider
         self.applicationProvider = applicationProvider
+        self.systemDock = systemDock
+        self.applicationCatalog = applicationCatalog
         self.store = store
         self.presenter = presenter
+
         // FR-4.2: unreadable or absent settings must still yield a usable app.
-        self.configuration = store.load() ?? .default
+        if let stored = store.load() {
+            self.configuration = stored
+        } else {
+            // Nothing stored means a first launch, so the settings the user
+            // already made on the system Dock are the best guess available —
+            // better than an arbitrary default. Seed-then-diverge: from the
+            // first save onwards, ours wins. (T8 Tier 2.)
+            var seeded = DockConfiguration.default
+            seeded.showsRecentApps = SystemDockPreferences.showsRecentApplications(
+                systemDock.showsRecentApplications)
+            self.configuration = seeded
+        }
     }
 
     public func start() {
@@ -84,14 +102,63 @@ public final class DockCoordinator {
             DockContentBuilder.elements(
                 pinned: configuration.pinnedItems,
                 running: applicationProvider.runningApplications,
-                showsRunningApps: configuration.showsRunningApps
+                recents: recentApplications(),
+                showsRunningApps: configuration.showsRunningApps,
+                showsRecentApps: configuration.showsRecentApps
             )
+        )
+    }
+
+    /// Re-read on every refresh rather than cached at launch.
+    ///
+    /// The Dock rewrites `recent-apps` as applications are used, so a list
+    /// captured once is stale by the time anyone looks at it. This is a
+    /// defaults lookup, not a file watch — the alternative, watching the plist
+    /// as ExtraDock does, costs a file descriptor and rules out sandboxing.
+    private func recentApplications() -> [ApplicationInfo] {
+        guard configuration.showsRecentApps else { return [] }
+
+        return SystemDockPreferences.applications(
+            fromTiles: systemDock.recentApplicationTiles,
+            isInstalled: applicationCatalog.applicationExists(atPath:)
         )
     }
 
     /// Rebuilds surface chrome after an accessibility or appearance change.
     public func refreshAppearance() {
         presenter.refreshAppearance()
+        refreshContents()
+    }
+
+    // MARK: - Browsing and importing
+
+    /// Every installed application, filed by initial for a browser menu.
+    ///
+    /// Read on demand so an application installed while fruit-dock is running
+    /// still appears.
+    public var installedApplicationGroups: [ApplicationGroup] {
+        ApplicationCatalog.groups(from: applicationCatalog.installedApplications)
+    }
+
+    /// Merges the system Dock's pinned applications into ours. FR-3.1.
+    ///
+    /// A one-off action rather than a live sync. Continuous mirroring would
+    /// make the two docks the same dock, which defeats the point of a second
+    /// one, and would silently undo any arrangement the user made here.
+    /// Merging rather than replacing is the same argument: what they already
+    /// pinned is theirs, and an import must never be able to lose it.
+    public func importFromSystemDock() {
+        let imported = SystemDockPreferences.applications(
+            fromTiles: systemDock.persistentApplicationTiles,
+            isInstalled: applicationCatalog.applicationExists(atPath:)
+        )
+        // `pin` is a no-op for anything already pinned, so existing items keep
+        // both their place and their order.
+        for application in imported {
+            configuration.pin(application)
+        }
+
+        store.save(configuration)
         refreshContents()
     }
 
@@ -114,6 +181,12 @@ public final class DockCoordinator {
 
     public func setShowsRunningApps(_ shows: Bool) {
         configuration.showsRunningApps = shows
+        store.save(configuration)
+        refreshContents()
+    }
+
+    public func setShowsRecentApps(_ shows: Bool) {
+        configuration.showsRecentApps = shows
         store.save(configuration)
         refreshContents()
     }

@@ -41,6 +41,47 @@ public protocol ApplicationProviding: AnyObject {
     func openTrash()
 }
 
+/// Reads Apple's Dock's own preferences.
+///
+/// Read-only, and deliberately so: `com.apple.dock` is another application's
+/// defaults domain, the Dock rewrites it whenever the user rearranges a tile,
+/// and nothing good comes of two processes writing the same preferences.
+///
+/// Values come back in their raw property-list shape rather than as
+/// applications, because interpreting that shape is a decision and decisions
+/// belong in the domain — `SystemDockPreferences` does the interpreting, and
+/// is testable from literal fixtures precisely because this protocol does not.
+@MainActor
+public protocol SystemDockReading: AnyObject {
+    /// Raw `persistent-apps` tiles, in the order the user arranged them.
+    var persistentApplicationTiles: [Any] { get }
+
+    /// Raw `recent-apps` tiles, most recent first.
+    var recentApplicationTiles: [Any] { get }
+
+    /// The user's "Show recent applications in Dock" setting, or nil when they
+    /// have never changed it — a missing key is not the same as `false`.
+    var showsRecentApplications: Bool? { get }
+}
+
+/// Supplies the applications installed on this Mac.
+///
+/// Wraps `FileManager` and `Bundle`, which read a filesystem a test has no
+/// business depending on: the set of installed applications differs on every
+/// machine, so a test written against the real one asserts nothing.
+@MainActor
+public protocol InstalledApplicationProviding: AnyObject {
+    /// Every application bundle in the standard locations, unsorted.
+    var installedApplications: [ApplicationInfo] { get }
+
+    /// Whether an application bundle is still present at `path`.
+    ///
+    /// Apple's Dock keeps tiles for applications that have since been deleted,
+    /// and importing one yields an icon that cannot draw and a click that
+    /// cannot launch.
+    func applicationExists(atPath path: String) -> Bool
+}
+
 /// Persists user settings.
 ///
 /// Abstracted for the same reason as `DisplayProviding`: `UserDefaults`

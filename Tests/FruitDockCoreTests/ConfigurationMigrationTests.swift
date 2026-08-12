@@ -31,6 +31,20 @@ struct ConfigurationMigrationTests {
         // Newer fields fall back to their defaults rather than throwing.
         #expect(config.pinnedItems.isEmpty)
         #expect(config.showsRunningApps)
+        // Recents stay off for an existing install: a section nobody asked for
+        // appearing after an upgrade reads as a bug.
+        #expect(!config.showsRecentApps)
+    }
+
+    @Test("A stored recents setting survives a later schema addition")
+    func recentsSettingRoundTrips() {
+        var original = DockConfiguration.default
+        original.showsRecentApps = true
+
+        let decoded = try? JSONDecoder().decode(
+            DockConfiguration.self, from: JSONEncoder().encode(original))
+
+        #expect(decoded?.showsRecentApps == true)
     }
 
     @Test("An empty object decodes to defaults")

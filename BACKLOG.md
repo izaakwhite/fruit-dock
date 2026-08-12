@@ -145,6 +145,8 @@ Read `com.apple.dock` and use it to seed our own settings, so a new install alre
 
 Seed-then-diverge, not slave-to: once the user changes one of our settings, ours wins. Read-only — never write to `com.apple.dock`.
 
+**Partly done 2026-08-11.** The reading half exists: `SystemDockDefaultsReader` opens the domain read-only, `SystemDockPreferences` parses the tile shape, `persistent-apps` can be imported on demand, `recent-apps` drives a dock section, and `show-recents` seeds `showsRecentApps` on first launch only. The settings in the table above — `tilesize`, `orientation`, `magnification`, `autohide`, `show-process-indicators` — are still unread, and each needs somewhere in `DockConfiguration` to land before it can be seeded.
+
 **Tier 3 — general system appearance.** Light/dark (NFR-4), accent and highlight colour, and menu bar auto-hide interactions. Use semantic `NSColor`s throughout so most of this is automatic; the current code already does.
 
 **Related:** the OSS ExtraDock reads the Dock plist directly and watches it with a file watcher, which is why it cannot be sandboxed. Reading via `UserDefaults(suiteName: "com.apple.dock")` is the lighter-touch route for Tier 2.
@@ -176,6 +178,13 @@ Recorded because it is unobvious and cost real time. `NSApplication.didChangeScr
 Current workaround is a 500ms poll, scheduled only while more than one display is connected. It is the deliberate exception to the no-polling rule in NFR-1 — a few rect comparisons, and with one display the Dock has nowhere to move.
 
 Revisit if a real notification is ever found. Any future code that assumes screen-parameter notifications cover Dock movement will have this same bug.
+
+### 🟡 T11 — Reading `com.apple.dock` returns nothing under App Sandbox
+**Phase:** 7 · **Depends on:** T5 · **Added 2026-08-11**
+
+Dock import, the recents section, and the `show-recents` seed all read another application's defaults domain. Unsandboxed that is an ordinary read and works. Inside the App Sandbox, `UserDefaults(suiteName: "com.apple.dock")` resolves against our own container instead and comes back empty, with no error to distinguish that from a Mac whose Dock is genuinely bare. Scanning `/Applications` has the same shape.
+
+The failure is silent, which is what makes it worth recording: three features would quietly become no-ops rather than complain. Assumption A1 already rules out the Mac App Store for unrelated reasons, so this only bites if sandboxing is ever revisited — at which point it needs either a temporary-exception entitlement or code that detects the empty case and says so, instead of showing an empty menu.
 
 ### 🟢 T6 — Config schema versioning
 **Phase:** 4
