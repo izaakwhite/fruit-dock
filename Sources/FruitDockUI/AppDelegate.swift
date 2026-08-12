@@ -7,7 +7,14 @@ import FruitDockCore
 /// together. Everything downstream receives its dependencies, so nothing else
 /// needs to reach for global state.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+public final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    /// Explicit because `main.swift` constructs this across a module boundary,
+    /// and `NSObject`'s initialiser is not inherited as `public`.
+    public override init() {
+        super.init()
+    }
+
     private var coordinator: DockCoordinator!
     private var statusItem: NSStatusItem!
     private var appearanceObserver: NSObjectProtocol?
@@ -25,7 +32,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// open to toggle a display should not wait on a directory listing.
     private let applicationsMenu = NSMenu()
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    // `public` because it witnesses a requirement of the public protocol
+    // `NSApplicationDelegate`. Swift requires that regardless of whether
+    // anything outside the module calls it — AppKit dispatching it at runtime
+    // does not exempt it.
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = DockCoordinator(
             displayProvider: displayProvider,
             applicationProvider: SystemApplicationProvider(accessibility: accessibility),
@@ -316,7 +327,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) {
+    // Public for the same reason as `applicationDidFinishLaunching`: it
+    // witnesses a requirement of the public `NSMenuDelegate`.
+    public func menuNeedsUpdate(_ menu: NSMenu) {
         // The applications submenu is its own delegate callback so its scan of
         // the filesystem happens when it opens, not when the status item does.
         if menu === applicationsMenu {
