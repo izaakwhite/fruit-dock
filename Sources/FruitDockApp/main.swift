@@ -1,4 +1,5 @@
 import AppKit
+import FruitDockUI
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
