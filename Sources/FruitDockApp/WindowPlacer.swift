@@ -2,150 +2,270 @@ import AppKit
 import ApplicationServices
 import FruitDockCore
 
-/// Moves another application's windows onto a chosen display.
+/// Moves an application's window onto a chosen display.
 ///
 /// There is no `NSWorkspace` call for this — macOS decides where an app's
-/// windows open. Repositioning another process's windows requires the
+/// windows open. Repositioning another process's window requires the
 /// Accessibility API, and therefore the user's explicit permission.
 ///
-/// Every entry point is best-effort: without permission, or for an app that
-/// refuses to be moved, the app still comes to the front on whatever screen
-/// macOS chose. Failing to move a window must never mean failing to switch.
+/// Every entry point is best-effort. Without permission, for a window the user
+/// has minimised or sent full-screen, or for an app that simply refuses, the
+/// app still comes to the front on whatever screen macOS chose. Failing to
+/// move a window must never mean failing to switch, so nothing here is on the
+/// path to activation and nothing here reports an error to the user. The one
+/// thing a failure does do is ask, once, for the permission that would have
+/// made it work.
+///
+/// An instance rather than static functions: the retry chains are state, and
+/// they have to be cancellable per process.
 @MainActor
-enum WindowPlacer {
+final class WindowPlacer {
 
-    /// How long to keep trying after a launch.
+    /// How long to keep looking after a click.
     ///
-    /// A freshly launched app has no windows for a moment, so a single attempt
-    /// almost always lands before there is anything to move.
-    private static let launchRetryWindow: TimeInterval = 4
+    /// A freshly launched app has no windows for a moment, and one that has
+    /// been activated with all its windows closed may open one in response, so
+    /// a single attempt usually lands before there is anything to move. Only
+    /// the genuinely unsettled case retries — a window that exists and is not
+    /// eligible ends the chain immediately rather than burning four seconds of
+    /// Accessibility round-trips on an answer that will not change.
+    private static let retryWindow: TimeInterval = 4
     private static let retryInterval: TimeInterval = 0.25
 
-    /// Moves the process's windows onto the given display, retrying briefly
-    /// while it still has none.
+    /// Accessibility calls are synchronous IPC into another process. An app
+    /// that is wedged, or still unpacking itself on first launch, would
+    /// otherwise hold the main thread for the default timeout and beachball a
+    /// menu-bar agent that is only doing something optional.
+    private static let messagingTimeout: Float = 0.5
+
+    private let permission: AccessibilityPermission
+
+    /// At most one live retry chain per process.
+    private var retries: [pid_t: Timer] = [:]
+
+    init(permission: AccessibilityPermission) {
+        self.permission = permission
+    }
+
+    /// Moves the process's main window onto the given display.
     ///
     /// Takes a `DisplayID` rather than an `NSScreen` because the screen is
     /// re-resolved on every attempt: `NSScreen` is neither `Sendable` nor
     /// stable, and a display can be unplugged mid-retry. Looking it up again
     /// each time means a vanished display simply ends the retries.
-    static func place(
-        pid: pid_t,
-        onto displayID: DisplayID,
-        deadline: Date = Date().addingTimeInterval(launchRetryWindow)
-    ) {
-        guard SystemSettings.hasAccessibilityPermission else { return }
+    func place(pid: pid_t, onto displayID: DisplayID) {
+        // The newest request wins. Clicking the same app on a second display
+        // while the first chain is still alive would otherwise leave two
+        // chains fighting over the window, and repeated clicks would stack
+        // chains without bound.
+        cancelRetries(for: pid)
+        attempt(pid: pid, onto: displayID, deadline: Date().addingTimeInterval(Self.retryWindow))
+    }
+
+    /// Ends any retry chain for a process, e.g. once it has terminated.
+    func cancelRetries(for pid: pid_t) {
+        retries.removeValue(forKey: pid)?.invalidate()
+    }
+
+    private func attempt(pid: pid_t, onto displayID: DisplayID, deadline: Date) {
+        guard permission.isGranted else {
+            // The app is already activated by this point; only the placement
+            // is lost. Ask once, then stay out of the way.
+            permission.consider(.placementAttempt)
+            return
+        }
         guard let screen = SystemDisplayProvider.screen(for: displayID) else { return }
 
-        if moveWindows(pid: pid, onto: screen) { return }
-        guard Date() < deadline else { return }
+        guard moveMainWindow(pid: pid, onto: screen) == .waitForWindows,
+              Date() < deadline
+        else { return }
 
-        // Nothing to move yet — the app is probably still starting up.
-        Timer.scheduledTimer(withTimeInterval: retryInterval, repeats: false) { _ in
+        let timer = Timer.scheduledTimer(
+            withTimeInterval: Self.retryInterval, repeats: false
+        ) { [weak self] _ in
             MainActor.assumeIsolated {
-                place(pid: pid, onto: displayID, deadline: deadline)
+                guard let self else { return }
+                self.retries[pid] = nil
+                self.attempt(pid: pid, onto: displayID, deadline: deadline)
             }
         }
+        retries[pid] = timer
     }
 
-    /// - Returns: whether any window was found and repositioned.
-    @discardableResult
-    private static func moveWindows(pid: pid_t, onto screen: NSScreen) -> Bool {
+    // MARK: - Accessibility
+
+    private func moveMainWindow(pid: pid_t, onto screen: NSScreen) -> WindowPlacementOutcome {
         let app = AXUIElementCreateApplication(pid)
+        _ = AXUIElementSetMessagingTimeout(app, Self.messagingTimeout)
 
-        var value: CFTypeRef?
-        guard
-            AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
-            let windows = value as? [AXUIElement],
-            !windows.isEmpty
-        else { return false }
-
-        var movedAny = false
-        for window in windows where move(window, onto: screen) {
-            movedAny = true
+        let windows = windows(of: app)
+        let main = elementValue(of: app, kAXMainWindowAttribute)
+        let candidates = windows.map { window in
+            describe(window, isMain: main.map { CFEqual(window, $0) } ?? false)
         }
-        return movedAny
+
+        let outcome = WindowPlacementRules.windowToMove(among: candidates)
+        guard case .move(let index) = outcome else { return outcome }
+
+        // A window that refuses the write behaves like one that was never
+        // eligible: stop, quietly. Retrying would not change the answer, and
+        // logging would produce a line on every click for the rest of the
+        // session.
+        return move(windows[index], onto: screen) ? outcome : .nothingToMove
     }
 
-    private static func move(_ window: AXUIElement, onto screen: NSScreen) -> Bool {
+    private func describe(_ window: AXUIElement, isMain: Bool) -> WindowCandidate {
+        WindowCandidate(
+            isMain: isMain,
+            isMinimised: boolValue(window, kAXMinimizedAttribute) ?? false,
+            // Not a `kAX…` constant: full-screen state is exposed under this
+            // attribute name with no symbol in the headers. A window that does
+            // not publish it is simply not full-screen.
+            isFullScreen: boolValue(window, "AXFullScreen") ?? false,
+            canBeMoved: isSettable(window, kAXPositionAttribute)
+        )
+    }
+
+    private func move(_ window: AXUIElement, onto screen: NSScreen) -> Bool {
         guard let size = size(of: window) else { return false }
 
-        // Already there — moving it would be a visible no-op jitter.
-        if let current = position(of: window),
-           screen.frame.contains(CGPoint(x: current.x + 1, y: current.y + 1)) {
-            return true
+        // Both coordinate systems are anchored to the primary display — the
+        // one with the menu bar, which AppKit guarantees is first.
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let displayInAX = WindowGeometry.accessibilityRect(
+            forCocoaRect: ScreenRect(screen.frame), primaryDisplayHeight: primaryHeight)
+
+        if let current = position(of: window) {
+            let windowInAX = ScreenRect(origin: ScreenPoint(current), size: ScreenSize(size))
+            // Already there. Writing the position anyway would drag a window
+            // the user had arranged into the middle of the same screen.
+            if WindowGeometry.isWindow(windowInAX, on: displayInAX) { return true }
         }
 
-        let target = centred(size: size, in: screen.visibleFrame)
-        var point = accessibilityOrigin(forCocoaRect: target)
+        // `visibleFrame`, so the window does not land under the menu bar or
+        // Apple's Dock. Only the origin is written — resizing another app's
+        // window is a bigger liberty than moving it, and an oversized window
+        // is pinned to the corner instead.
+        let target = WindowGeometry.centred(ScreenSize(size), in: ScreenRect(screen.visibleFrame))
+        var point = CGPoint(
+            WindowGeometry.accessibilityOrigin(
+                forCocoaRect: target, primaryDisplayHeight: primaryHeight))
 
         guard let axValue = AXValueCreate(.cgPoint, &point) else { return false }
         return AXUIElementSetAttributeValue(
             window, kAXPositionAttribute as CFString, axValue) == .success
     }
 
-    // MARK: - Geometry
+    // MARK: - Attribute reading
 
-    private static func centred(size: CGSize, in area: NSRect) -> NSRect {
-        // Shrink to fit rather than overflow onto a neighbouring display.
-        let width = min(size.width, area.width)
-        let height = min(size.height, area.height)
-        return NSRect(
-            x: area.midX - width / 2,
-            y: area.midY - height / 2,
-            width: width,
-            height: height
-        )
-    }
-
-    /// Converts a Cocoa rect to the origin the Accessibility API expects.
-    ///
-    /// The two coordinate systems disagree. Cocoa's global space has its
-    /// origin at the *bottom*-left of the primary display with y increasing
-    /// upward; Accessibility uses the *top*-left with y increasing downward.
-    /// Passing a Cocoa point straight through puts windows off-screen — and
-    /// looks correct on a single display whose origin happens to be zero,
-    /// which is what makes the mistake easy to miss.
-    private static func accessibilityOrigin(forCocoaRect rect: NSRect) -> CGPoint {
-        // The primary display defines the shared origin for both systems.
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? rect.maxY
-        return CGPoint(x: rect.minX, y: primaryHeight - rect.maxY)
-    }
-
-    private static func size(of window: AXUIElement) -> CGSize? {
-        copyValue(window, kAXSizeAttribute, type: .cgSize) { value, out in
-            AXValueGetValue(value, .cgSize, &out)
-        }
-    }
-
-    private static func position(of window: AXUIElement) -> CGPoint? {
-        copyValue(window, kAXPositionAttribute, type: .cgPoint) { value, out in
-            AXValueGetValue(value, .cgPoint, &out)
-        }
-    }
-
-    /// Shared plumbing for reading an `AXValue`-wrapped attribute.
-    private static func copyValue<T>(
-        _ element: AXUIElement,
-        _ attribute: String,
-        type: AXValueType,
-        extract: (AXValue, inout T) -> Bool
-    ) -> T? where T: BinaryFloatingPointPair {
+    private func windows(of app: AXUIElement) -> [AXUIElement] {
         var raw: CFTypeRef?
         guard
-            AXUIElementCopyAttributeValue(element, attribute as CFString, &raw) == .success,
-            let value = raw as! AXValue?,
-            AXValueGetType(value) == type
+            AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw) == .success,
+            let windows = raw as? [AXUIElement]
+        else { return [] }
+        return windows
+    }
+
+    private func elementValue(of app: AXUIElement, _ attribute: String) -> AXUIElement? {
+        var raw: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(app, attribute as CFString, &raw) == .success,
+            let value = raw, CFGetTypeID(value) == AXUIElementGetTypeID()
         else { return nil }
+        return unsafeDowncast(value, to: AXUIElement.self)
+    }
+
+    /// Absent means "no", not "unknown": an app that does not publish
+    /// `AXFullScreen` at all is one that has no full-screen windows.
+    private func boolValue(_ target: AXUIElement, _ attribute: String) -> Bool? {
+        var raw: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(target, attribute as CFString, &raw) == .success,
+            let object = raw
+        else { return nil }
+
+        // These arrive as `CFBoolean`, which Foundation hands back as an
+        // `NSNumber` subclass. Going through `NSNumber` rather than a forced
+        // cast means an app answering with something else yields nil instead
+        // of a trap.
+        return (object as? NSNumber)?.boolValue
+    }
+
+    private func isSettable(_ target: AXUIElement, _ attribute: String) -> Bool {
+        var settable: DarwinBoolean = false
+        guard
+            AXUIElementIsAttributeSettable(target, attribute as CFString, &settable) == .success
+        else { return false }
+        return settable.boolValue
+    }
+
+    private func size(of window: AXUIElement) -> CGSize? {
+        axValue(window, kAXSizeAttribute, as: .cgSize) { AXValueGetValue($0, .cgSize, &$1) }
+    }
+
+    private func position(of window: AXUIElement) -> CGPoint? {
+        axValue(window, kAXPositionAttribute, as: .cgPoint) { AXValueGetValue($0, .cgPoint, &$1) }
+    }
+
+    /// Reads an `AXValue`-wrapped attribute.
+    ///
+    /// The type is checked with `CFGetTypeID` rather than a Swift cast: a
+    /// forced cast to `AXValue` traps if an application ever answers with
+    /// something else, and taking down the dock because another app returned
+    /// an odd attribute would be a poor trade for an optional feature.
+    private func axValue<T>(
+        _ target: AXUIElement,
+        _ attribute: String,
+        as type: AXValueType,
+        extract: (AXValue, inout T) -> Bool
+    ) -> T? where T: AXValueUnwrappable {
+        var raw: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(target, attribute as CFString, &raw) == .success,
+            let object = raw, CFGetTypeID(object) == AXValueGetTypeID()
+        else { return nil }
+
+        let value = unsafeDowncast(object, to: AXValue.self)
+        guard AXValueGetType(value) == type else { return nil }
 
         var result = T.zero
         return extract(value, &result) ? result : nil
     }
 }
 
-/// Lets `copyValue` return either a point or a size without duplicating it.
-protocol BinaryFloatingPointPair {
+/// Lets the reader above return either a point or a size without duplicating it.
+protocol AXValueUnwrappable {
     static var zero: Self { get }
 }
 
-extension CGPoint: BinaryFloatingPointPair {}
-extension CGSize: BinaryFloatingPointPair {}
+extension CGPoint: AXValueUnwrappable {}
+extension CGSize: AXValueUnwrappable {}
+
+// MARK: - Bridging to the domain's plain values
+
+/// The domain layer holds this geometry in plain numbers so it can be tested
+/// with literals; these are the only conversions between it and CoreGraphics.
+extension ScreenPoint {
+    init(_ point: CGPoint) {
+        self.init(x: point.x, y: point.y)
+    }
+}
+
+extension ScreenSize {
+    init(_ size: CGSize) {
+        self.init(width: size.width, height: size.height)
+    }
+}
+
+extension ScreenRect {
+    init(_ rect: CGRect) {
+        self.init(origin: ScreenPoint(rect.origin), size: ScreenSize(rect.size))
+    }
+}
+
+extension CGPoint {
+    init(_ point: ScreenPoint) {
+        self.init(x: point.x, y: point.y)
+    }
+}

@@ -14,11 +14,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let displayProvider = SystemDisplayProvider()
     private let presenter = PanelPresenter()
+    private let accessibility = AccessibilityPermission()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator = DockCoordinator(
             displayProvider: displayProvider,
-            applicationProvider: SystemApplicationProvider(),
+            applicationProvider: SystemApplicationProvider(accessibility: accessibility),
             store: UserDefaultsConfigurationStore(),
             presenter: presenter
         )
@@ -33,6 +34,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setUpStatusItem()
         coordinator.start()
+
+        // Only worth asking on a multi-display Mac. Opening apps on the
+        // display you clicked is the only thing this permission buys, and with
+        // one display there is nowhere else for them to open — a prompt then
+        // is pure nag for a feature the user cannot use. The first placement
+        // attempt asks instead if a second display arrives later.
+        if displayProvider.connectedDisplays.count > 1 {
+            accessibility.consider(.launch)
+        }
     }
 
     // MARK: - Menu bar
@@ -96,6 +106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         menu.addItem(.separator())
+        addAccessibilityItem(to: menu)
+
+        menu.addItem(.separator())
 
         // One click to each pane people actually need. macOS will not let an
         // app change these itself, so landing them on the right screen is the
@@ -125,6 +138,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    /// Reports whether apps will actually open on the display that was clicked.
+    ///
+    /// Without Accessibility permission that half of the click silently does
+    /// nothing — the app still activates, just wherever macOS decided — and a
+    /// feature that fails invisibly reads as a broken app rather than an
+    /// ungranted permission. Rebuilt with the rest of the menu on every open,
+    /// so granting permission in System Settings is reflected without a
+    /// relaunch and without anything to observe.
+    ///
+    /// Worded as the consequence rather than the permission: what the user
+    /// noticed was the app opening on the wrong screen, not a missing entry in
+    /// a privacy list.
+    private func addAccessibilityItem(to menu: NSMenu) {
+        let granted = accessibility.isGranted
+        let item = NSMenuItem(
+            title: granted
+                ? "Opening Apps on the Clicked Display"
+                : "Enable Opening Apps on the Clicked Display…",
+            action: granted ? nil : #selector(grantAccessibility(_:)),
+            keyEquivalent: ""
+        )
+        item.target = self
+        item.state = granted ? .on : .off
+        item.toolTip = granted
+            ? "fruit-dock has Accessibility access and can move a window to the display you clicked."
+            : "Without Accessibility access apps still open — macOS just chooses the display."
+        menu.addItem(item)
+    }
+
     private func addToggle(to menu: NSMenu, title: String, isOn: Bool, action: Selector) {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
@@ -150,6 +192,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleAvoidsSystemDock(_ sender: NSMenuItem) {
         coordinator.setAvoidsSystemDockDisplay(sender.state == .off)
+    }
+
+    @objc private func grantAccessibility(_ sender: NSMenuItem) {
+        accessibility.requestFromMenu()
     }
 
     @objc private func openSettingsPane(_ sender: NSMenuItem) {

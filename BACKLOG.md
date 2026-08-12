@@ -177,6 +177,39 @@ Current workaround is a 500ms poll, scheduled only while more than one display i
 
 Revisit if a real notification is ever found. Any future code that assumes screen-parameter notifications cover Dock movement will have this same bug.
 
+### 🔴 T11 — No window has been observed moving
+**Phase:** 3 · **Added 2026-08-11**
+
+`WindowPlacer` has never been seen to reposition anything. It cannot be: the assistant that wrote it cannot launch a GUI app, click a dock icon, or grant Accessibility permission, and the whole feature is gated on a permission that only a human can give. The likeliest explanation for the original "it does nothing" report was simply that permission was never granted, which the code then swallowed in a silent `guard`. That guard now prompts and the menu reports the state, but **whether a window ever lands on the clicked display remains entirely unverified.**
+
+The arithmetic and the which-window rule were extracted into `FruitDockCore` (`WindowGeometry`, `WindowPlacementRules`) and are covered by tests with literal coordinates. That covers being *wrong*; it says nothing about being *wired*, which is the T9 lesson.
+
+Worth confirming by hand, in this order:
+
+- Grant permission and check the menu item flips to "Opening Apps on the Clicked Display" with a checkmark.
+- Click a single-window app's icon on the second display — does its window arrive?
+- Click a multi-window app's icon. Only the frontmost window should move; the rest must stay put.
+- Repeat on a display *above* or *below* the primary, not merely beside it. Everything vertical is where the coordinate flip bites, and a side-by-side arrangement of equal-height displays hides it.
+- Click the same app on two displays in quick succession; the window should end on the second, not oscillate.
+
+**Read T13 first — it may make all of the above impossible to test as things stand.**
+
+### 🔴 T13 — `swift run` cannot hold Accessibility permission
+**Phase:** 3 · **Added 2026-08-11 · Unverified, but a strong candidate for "placement does nothing"**
+
+There is no app bundle in this project. `swift run FruitDockApp` produces a bare, ad-hoc-signed executable in `.build/`, and TCC identifies such a binary by path plus code signature. Every `swift build` relinks it and changes that signature, so a permission granted before a rebuild is expected to stop applying after one — silently, with the entry still showing as ticked in System Settings.
+
+If that holds, the feature is untestable from `swift run` no matter how correct the code is, and every attempt to verify it by hand will look like a bug in `WindowPlacer`.
+
+Not confirmed. It needs someone to grant permission, watch placement work, rebuild, and watch it stop. If it does hold, the fix is a real `.app` bundle with a stable bundle identifier and a consistent signing identity — which Phase 7 wants regardless.
+
+### 🟡 T12 — Full-screen detection relies on an undocumented attribute
+**Phase:** 3 · **Added 2026-08-11**
+
+`WindowPlacer` reads `AXFullScreen` to avoid trying to move a window that owns its own Space. There is no `kAX…` constant for it — the name is convention among window managers, not published API, and Apple could drop it.
+
+Failure is benign by construction: an absent attribute reads as "not full-screen", and the `AXUIElementIsAttributeSettable` check is expected to reject the move anyway. So this degrades to a redundant belt rather than a broken feature. Recorded because a future reader will wonder why one attribute in that file is a string literal.
+
 ### 🟢 T6 — Config schema versioning
 **Phase:** 4
 
