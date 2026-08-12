@@ -80,36 +80,41 @@ final class DockPanel: NSPanel {
     private func makeContentView() -> NSView {
         let container = makeBackgroundView()
         background = container
-
-        bar.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(bar)
-        NSLayoutConstraint.activate([
-            bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            bar.topAnchor.constraint(equalTo: container.topAnchor),
-            bar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
         return container
     }
 
-    /// Blurred material normally; a solid fill under Reduce Transparency.
+    /// Liquid Glass on macOS 26+, the pre-Glass blurred material below that,
+    /// and a solid fill under Reduce Transparency regardless of OS version.
     ///
-    /// Rendering the blur regardless would produce exactly the effect the user
-    /// asked the system not to produce.
+    /// Rendering translucency at all under Reduce Transparency would produce
+    /// exactly the effect the user asked the system not to produce, so that
+    /// check comes first and short-circuits both material paths — see
+    /// backlog T8 Tier 1 and issue #4.
     private func makeBackgroundView() -> NSView {
         let radius: CGFloat = 18
 
         if SystemAppearance.reducesTransparency {
-            let solid = NSView()
-            solid.wantsLayer = true
-            solid.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-            solid.layer?.cornerRadius = radius
-            solid.layer?.masksToBounds = true
-            solid.layer?.borderWidth = 1
-            solid.layer?.borderColor = NSColor.separatorColor.cgColor
-            return solid
+            return Self.solidBackground(radius: radius, embedding: bar)
         }
+        if #available(macOS 26, *) {
+            return Self.glassBackground(radius: radius, embedding: bar)
+        }
+        return Self.visualEffectBackground(radius: radius, embedding: bar)
+    }
 
+    private static func solidBackground(radius: CGFloat, embedding content: NSView) -> NSView {
+        let solid = NSView()
+        solid.wantsLayer = true
+        solid.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        solid.layer?.cornerRadius = radius
+        solid.layer?.masksToBounds = true
+        solid.layer?.borderWidth = 1
+        solid.layer?.borderColor = NSColor.separatorColor.cgColor
+        embed(content, edgeToEdgeIn: solid)
+        return solid
+    }
+
+    private static func visualEffectBackground(radius: CGFloat, embedding content: NSView) -> NSView {
         let material = NSVisualEffectView()
         material.material = .hudWindow
         material.blendingMode = .behindWindow
@@ -122,12 +127,61 @@ final class DockPanel: NSPanel {
             material.layer?.borderWidth = 1
             material.layer?.borderColor = NSColor.separatorColor.cgColor
         }
+        embed(content, edgeToEdgeIn: material)
         return material
+    }
+
+    /// `NSGlassEffectView` is new in macOS 26 (Tahoe) — confirmed against
+    /// live Apple documentation (see PR description for sources), not
+    /// assumed. Content is attached through its documented `contentView`
+    /// property, which AppKit ties to the glass's bounds via Auto Layout and
+    /// uses to keep the content legible as the glass adapts to what's behind
+    /// it — an ordinary `addSubview` would skip that treatment.
+    ///
+    /// Increase Contrast's border is drawn on a plain wrapping layer instead
+    /// of the glass view's own layer: `cornerRadius` is the only shape control
+    /// AppKit documents for `NSGlassEffectView`, and poking at `.layer`
+    /// directly on a type whose rendering AppKit otherwise manages privately
+    /// is exactly the kind of assumption this issue was not supposed to ship
+    /// unverified.
+    @available(macOS 26, *)
+    private static func glassBackground(radius: CGFloat, embedding content: NSView) -> NSView {
+        let glass = NSGlassEffectView()
+        glass.style = .regular
+        glass.cornerRadius = radius
+        content.translatesAutoresizingMaskIntoConstraints = false
+        glass.contentView = content
+
+        guard SystemAppearance.increasesContrast else { return glass }
+
+        let wrapper = NSView()
+        wrapper.wantsLayer = true
+        wrapper.layer?.cornerRadius = radius
+        wrapper.layer?.masksToBounds = true
+        wrapper.layer?.borderWidth = 1
+        wrapper.layer?.borderColor = NSColor.separatorColor.cgColor
+        embed(glass, edgeToEdgeIn: wrapper)
+        return wrapper
+    }
+
+    private static func embed(_ content: NSView, edgeToEdgeIn container: NSView) {
+        content.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            content.topAnchor.constraint(equalTo: container.topAnchor),
+            content.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
     }
 
     /// Rebuilds the background after an accessibility setting changes.
     func refreshAppearance() {
         contentView = makeContentView()
+        // The label is a separate window with its own background; it must be
+        // rebuilt too, or it keeps rendering translucent after Reduce
+        // Transparency is turned on until the next hover recreates it.
+        hoverLabel.refreshAppearance()
     }
 
     // MARK: - Transitions
