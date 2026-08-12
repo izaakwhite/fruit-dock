@@ -16,6 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let presenter = PanelPresenter()
     private let accessibility = AccessibilityPermission()
 
+    /// Created on first use rather than at launch — most sessions never open
+    /// it, and it needs `coordinator` to already exist.
+    private var preferencesWindowController: PreferencesWindowController?
+
     /// Populated only when it is about to open, so the filesystem scan behind
     /// it is not charged to every click of the status item — the menu people
     /// open to toggle a display should not wait on a directory listing.
@@ -156,6 +160,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(settingsItem)
 
         menu.addItem(.separator())
+        let preferencesItem = NSMenuItem(
+            title: "fruit-dock Settings…", action: #selector(showPreferences), keyEquivalent: ",")
+        preferencesItem.target = self
+        menu.addItem(preferencesItem)
+
+        menu.addItem(.separator())
         menu.addItem(
             withTitle: "Quit fruit-dock",
             action: #selector(NSApplication.terminate(_:)),
@@ -280,6 +290,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openSettingsPane(_ sender: NSMenuItem) {
         guard let pane = sender.representedObject as? SystemSettings.Pane else { return }
         SystemSettings.open(pane)
+    }
+
+    /// Opens the Coexist/Replace settings window — the same choice as the
+    /// "Skip Display with macOS Dock" menu checkbox above, in a dedicated
+    /// window for people who want the fuller explanation. Both read and
+    /// write `coordinator.configuration.avoidsSystemDockDisplay` through the
+    /// same `setAvoidsSystemDockDisplay(_:)` call, so neither can drift from
+    /// the other.
+    @objc private func showPreferences() {
+        let controller = preferencesWindowController ?? {
+            let controller = PreferencesWindowController()
+            controller.currentRelationship = { [weak self] in
+                SystemDockRelationship(
+                    avoidsSystemDockDisplay: self?.coordinator.configuration.avoidsSystemDockDisplay ?? true)
+            }
+            controller.setRelationship = { [weak self] relationship in
+                self?.coordinator.setAvoidsSystemDockDisplay(relationship.avoidsSystemDockDisplay)
+            }
+            preferencesWindowController = controller
+            return controller
+        }()
+        controller.present()
     }
 }
 
