@@ -61,9 +61,12 @@ fi
 # exists, which is the most confusing state of the three.
 if pgrep -f "fruit-dock.app/Contents/MacOS/FruitDockApp" > /dev/null 2>&1; then
     echo "==> Quitting the running instance"
-    # Ask first: the app deserves the chance to close its panels and remove its
-    # observers. SIGKILL only if it will not go.
-    osascript -e 'quit app "fruit-dock"' > /dev/null 2>&1 || true
+    # By bundle identifier, not by name. The bundle is called fruit-dock but the
+    # executable — and therefore the process System Events reports — is
+    # FruitDockApp, so `quit app "fruit-dock"` matches nothing and fails
+    # silently. That left every rebuild waiting out the timeout below and then
+    # force-killing, so the app never once shut down cleanly.
+    osascript -e 'tell application id "'"$BUNDLE_ID"'" to quit' > /dev/null 2>&1 || true
 
     for _ in $(seq 1 20); do
         pgrep -f "fruit-dock.app/Contents/MacOS/FruitDockApp" > /dev/null 2>&1 || break

@@ -23,6 +23,51 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private let presenter = PanelPresenter()
     private let accessibility = AccessibilityPermission()
 
+    /// How long an earlier copy is given to exit before it is killed.
+    private static let replacementGrace: TimeInterval = 1.5
+
+    /// Terminates any earlier copy of this app, so the newest launch wins.
+    ///
+    /// macOS does not do this for us. A second copy of an ordinary app is
+    /// refused and the running one is activated instead, but only when both
+    /// launch from the same bundle path — and an accessory app has no window to
+    /// activate anyway. Two copies therefore coexist happily, each drawing its
+    /// own dock on every display and each competing for the same clicks.
+    ///
+    /// That failure is close to invisible. There is no window and no Dock icon,
+    /// so the only symptom is a duplicate menu-bar item — easy to miss — while
+    /// clicks land on whichever copy owns the panel on top. During development
+    /// that reads as a fix having failed rather than as an old build still
+    /// running, which is exactly how it was reported.
+    ///
+    /// Asks first and kills second: the earlier copy should get the chance to
+    /// close its panels and drop its observers, since a panel outliving its
+    /// process leaves an unclickable dock on screen until the window server
+    /// reaps it.
+    private static func replaceEarlierInstances() {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        guard let identifier = Bundle.main.bundleIdentifier else { return }
+
+        let earlier = NSRunningApplication
+            .runningApplications(withBundleIdentifier: identifier)
+            .filter { $0.processIdentifier != ownPID }
+
+        guard !earlier.isEmpty else { return }
+
+        for instance in earlier {
+            instance.terminate()
+        }
+
+        // Force only what is still there afterwards. A copy wedged mid-shutdown
+        // would otherwise keep its menu-bar item and its panels forever.
+        DispatchQueue.main.asyncAfter(deadline: .now() + replacementGrace) {
+            for instance in earlier where !instance.isTerminated {
+                NSLog("fruit-dock: earlier instance \(instance.processIdentifier) ignored quit — forcing")
+                instance.forceTerminate()
+            }
+        }
+    }
+
     /// Created on first use rather than at launch — most sessions never open
     /// it, and it needs `coordinator` to already exist.
     private var preferencesWindowController: PreferencesWindowController?
@@ -37,6 +82,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // anything outside the module calls it — AppKit dispatching it at runtime
     // does not exempt it.
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.replaceEarlierInstances()
+
         coordinator = DockCoordinator(
             displayProvider: displayProvider,
             applicationProvider: SystemApplicationProvider(accessibility: accessibility),
