@@ -47,6 +47,12 @@ public final class DockCoordinator {
             seeded.showsRecentApps = SystemDockPreferences.showsRecentApplications(
                 systemDock.showsRecentApplications)
 
+            // Someone who enlarged their Dock wanted larger icons, and that
+            // intent should carry across rather than being overridden by a
+            // constant that happens to differ. This is the base size; each
+            // display then scales it — see `DockSizing`.
+            seeded.iconSize = SystemDockPreferences.tileSize(systemDock.tileSize)
+
             // Pinned apps are seeded too, not just the preferences. An empty
             // dock on first launch shows nothing but whatever happens to be
             // running, so every icon is an app the user could already reach and

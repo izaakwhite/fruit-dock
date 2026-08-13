@@ -11,6 +11,10 @@ final class DockPanel: NSPanel {
     private let edge: DockEdge
     private let bar: DockBarView
     private let iconSize: CGFloat
+
+    /// The configured base size, kept so the panel can tell whether a display
+    /// change has invalidated the size it was built at.
+    private let baseIconSize: Double
     private var background: NSView?
     private let hoverLabel = HoverLabelPanel()
 
@@ -31,6 +35,7 @@ final class DockPanel: NSPanel {
         // at construction because a panel already belongs to one display for
         // its lifetime — a display that changes resolution is torn down and
         // rebuilt rather than resized.
+        self.baseIconSize = configuration.iconSize
         self.iconSize = DockSizing.iconSize(
             base: configuration.iconSize,
             displayHeight: screen.frame.height
@@ -103,7 +108,10 @@ final class DockPanel: NSPanel {
     /// check comes first and short-circuits both material paths — see
     /// backlog T8 Tier 1 and issue #4.
     private func makeBackgroundView() -> NSView {
-        let radius: CGFloat = 18
+        // Proportional to the icons rather than fixed. A radius tuned for 48pt
+        // icons reads as a hard rectangle once the dock scales up on a large
+        // display, and as an over-rounded lozenge when it scales down.
+        let radius = Self.cornerRadius(forIconSize: iconSize)
 
         if SystemAppearance.reducesTransparency {
             return Self.solidBackground(radius: radius, embedding: bar)
@@ -159,8 +167,15 @@ final class DockPanel: NSPanel {
     @available(macOS 26, *)
     private static func glassBackground(radius: CGFloat, embedding content: NSView) -> NSView {
         let glass = NSGlassEffectView()
+        // The whole documented surface of this type is `contentView`,
+        // `cornerRadius`, `tintColor` and `style` — checked against
+        // NSGlassEffectView.h in the macOS 26.5 SDK, after an `effectIsInteractive`
+        // that #4 reported as confirmed turned out not to exist. `tintColor` is
+        // deliberately left unset: the dock should take its colour from what is
+        // behind it, which is the entire point of the material.
         glass.style = .regular
         glass.cornerRadius = radius
+
         content.translatesAutoresizingMaskIntoConstraints = false
         glass.contentView = content
 
@@ -174,6 +189,16 @@ final class DockPanel: NSPanel {
         wrapper.layer?.borderColor = NSColor.separatorColor.cgColor
         embed(glass, edgeToEdgeIn: wrapper)
         return wrapper
+    }
+
+    /// The dock's corner radius for a given icon size.
+    ///
+    /// Kept as a ratio of the tile rather than a constant so the shape holds at
+    /// every scale. The figure comes from matching Apple's Dock at its default
+    /// size by eye, which is the only reference available — issue #3 tracks
+    /// measuring it properly.
+    static func cornerRadius(forIconSize iconSize: CGFloat) -> CGFloat {
+        (iconSize * 0.375).rounded()
     }
 
     private static func embed(_ content: NSView, edgeToEdgeIn container: NSView) {
@@ -243,6 +268,26 @@ final class DockPanel: NSPanel {
 
     func updatePosition() {
         resizeAndReposition(elements: nil)
+    }
+
+    /// Whether this panel is still the right size for its display.
+    ///
+    /// Icon size is fixed at construction, so a display that changes resolution
+    /// — or one whose configured base size changed — leaves the panel drawn at
+    /// a scale that no longer suits it. Repositioning alone would move a
+    /// wrongly sized dock to the right place. The presenter rebuilds instead of
+    /// resizing in place, since orientation and glass are also fixed at
+    /// construction and a rebuild is already the established way to change them.
+    func isStale(for configuration: DockConfiguration) -> Bool {
+        guard let screen = SystemDisplayProvider.screen(for: displayID) else {
+            // No screen means the panel is about to be dismissed anyway.
+            return false
+        }
+
+        let wanted = DockSizing.iconSize(
+            base: configuration.iconSize, displayHeight: screen.frame.height)
+
+        return wanted != iconSize || configuration.iconSize != baseIconSize
     }
 
     // MARK: - Geometry

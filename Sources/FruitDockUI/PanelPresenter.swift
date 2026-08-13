@@ -12,6 +12,12 @@ final class PanelPresenter: DockPresenting {
     private var panels: [DisplayID: DockPanel] = [:]
     private var lastElements: [DockElement] = []
 
+    /// What each panel was built from, so a panel can be rebuilt without the
+    /// coordinator having to describe it again. `reposition` is told only which
+    /// display moved, and rebuilding needs more than that.
+    private var displays: [DisplayID: DisplayInfo] = [:]
+    private var configuration: DockConfiguration = .default
+
     var presentedDisplays: Set<DisplayID> { Set(panels.keys) }
 
     func present(on display: DisplayInfo, configuration: DockConfiguration) {
@@ -19,6 +25,9 @@ final class PanelPresenter: DockPresenting {
         // Skipping leaves it absent from `presentedDisplays`, so the next
         // reconciliation simply tries again.
         guard let screen = SystemDisplayProvider.screen(for: display.id) else { return }
+
+        self.displays[display.id] = display
+        self.configuration = configuration
 
         let panel = DockPanel(display: display, screen: screen, configuration: configuration)
         panel.actionHandler = actionHandler
@@ -43,7 +52,27 @@ final class PanelPresenter: DockPresenting {
     }
 
     func reposition(_ displayID: DisplayID) {
-        panels[displayID]?.updatePosition()
+        guard let panel = panels[displayID] else { return }
+
+        // A resolution change arrives here as a reposition, but icon size is
+        // derived from the display's height and fixed when the panel is built.
+        // Moving it alone would leave a dock scaled for the resolution the
+        // display no longer has.
+        if panel.isStale(for: configuration), let display = displays[displayID] {
+            rebuild(display)
+            return
+        }
+
+        panel.updatePosition()
+    }
+
+    /// Replaces a panel in place, keeping its contents.
+    ///
+    /// Closed without fading: a fade would cross with the replacement's fade-in
+    /// and read as a flicker, where an instant swap reads as a resize.
+    private func rebuild(_ display: DisplayInfo) {
+        panels.removeValue(forKey: display.id)?.close()
+        present(on: display, configuration: configuration)
     }
 
     func render(_ elements: [DockElement]) {

@@ -34,6 +34,31 @@ public enum SystemDockPreferences {
         stored ?? showsRecentApplicationsByDefault
     }
 
+    // MARK: - Icon size
+
+    public static let tileSizeKey = "tilesize"
+
+    /// The Dock's own default, used when `tilesize` has never been changed.
+    public static let defaultTileSize: Double = 48
+
+    /// The range Apple's own Dock size slider spans. A value outside it did not
+    /// come from that slider, and is more likely a stale or corrupt key than an
+    /// instruction worth honouring.
+    public static let tileSizeRange: ClosedRange<Double> = 16...128
+
+    /// The user's Dock icon size, as a size we can safely draw at.
+    ///
+    /// Seeding from this rather than a constant is the difference between a
+    /// dock that matches the one already on screen and one that merely sits
+    /// near it. Someone who enlarged their Dock did so because they wanted
+    /// larger icons, and that intent should carry over.
+    ///
+    /// - Parameter stored: the raw `tilesize` value, nil when never changed.
+    public static func tileSize(_ stored: Double?) -> Double {
+        guard let stored, stored.isFinite else { return defaultTileSize }
+        return min(max(stored, tileSizeRange.lowerBound), tileSizeRange.upperBound)
+    }
+
     // MARK: - Tiles
 
     /// Applications named by an array of Dock tiles, in Dock order.

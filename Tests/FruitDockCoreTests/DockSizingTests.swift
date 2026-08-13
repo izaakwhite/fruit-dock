@@ -79,6 +79,42 @@ struct DockSizingTests {
         #expect(sizes == sizes.sorted())
     }
 
+    // MARK: - Inheriting the system Dock's size
+
+    @Test("The system Dock's icon size is adopted as the base")
+    func adoptsSystemTileSize() {
+        // Someone who enlarged their Dock wanted larger icons. Starting from a
+        // constant instead produces a dock that sits beside theirs at a
+        // visibly different size.
+        #expect(SystemDockPreferences.tileSize(66) == 66)
+    }
+
+    @Test("An untouched Dock size falls back to Apple's default")
+    func absentTileSizeUsesDefault() {
+        // The key is absent on any Mac where the slider was never moved.
+        #expect(
+            SystemDockPreferences.tileSize(nil) == SystemDockPreferences.defaultTileSize)
+    }
+
+    @Test("A size outside Apple's own slider range is clamped")
+    func implausibleTileSizeIsClamped() {
+        // Outside that range it did not come from the slider, so it is more
+        // likely a stale or corrupt key than an instruction worth honouring.
+        #expect(SystemDockPreferences.tileSize(4) == SystemDockPreferences.tileSizeRange.lowerBound)
+        #expect(SystemDockPreferences.tileSize(999) == SystemDockPreferences.tileSizeRange.upperBound)
+    }
+
+    @Test("A non-finite size falls back rather than propagating")
+    func nonFiniteTileSizeFallsBack() {
+        // A NaN would survive every comparison below and reach Auto Layout,
+        // which reacts to it far less gracefully than a fallback does.
+        #expect(
+            SystemDockPreferences.tileSize(.nan) == SystemDockPreferences.defaultTileSize)
+        #expect(
+            SystemDockPreferences.tileSize(.infinity)
+                == SystemDockPreferences.defaultTileSize)
+    }
+
     @Test("A real two-display arrangement gets two different sizes")
     func laptopAndExternalDiffer() {
         // The case that prompted this: a 14-inch MacBook Pro beside a 1440p

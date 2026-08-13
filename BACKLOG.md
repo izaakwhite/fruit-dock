@@ -316,6 +316,22 @@ Use `String(localized:)` from the first UI commit even though only English ships
 
 ---
 
+## Widgets
+
+Requested 2026-08-12, after seeing Docky's. Tiered by what each one costs the user, because that is the axis that matters here rather than difficulty.
+
+**Tier 1 — free. Shipping.** Clock, Battery, Memory. No permission, no network, no private API. `DockWidget` in the domain, tiles rendered like any other element.
+
+**Tier 2 — costs a permission prompt.** Calendar and Reminders need EventKit consent. Worth having, but the app currently asks for exactly **one** permission and the README sells that. Each of these must be opt-in — added only when the user turns the widget on, never at launch — and the widget must degrade to a "grant access" tile rather than an empty one when consent is refused. See `AccessibilityPromptPolicy` for the never-nag rule already established.
+
+**Tier 3 — costs network access.** Weather needs the network and a location. This app makes no network requests at all today, which is a claim in the README worth keeping deliberate rather than losing by accident. Needs a provider decision, an API key story, and an offline state.
+
+**Tier 4 — declined.** Now Playing is only reachable through private MediaRemote SPI. See **B8**: Docky takes that route and pays for it with breakage across macOS releases. Not worth it for a decorative tile. Revisit only if Apple publishes an API.
+
+Cross-cutting, and the reason widgets are not free even at Tier 1: they are the **only** thing in this app that must poll. Nothing posts a notification when a minute passes. `DockWidget.refreshInterval` keeps each one as slow as it can afford — a clock without seconds needs one update per second, battery needs thirty — and NFR-1's idle-CPU budget is the constraint to measure against, not to assume.
+
+---
+
 ## Feature requests
 
 Tracked as GitHub issues; summarised here so this file stays the single place to look. Added 2026-08-12.

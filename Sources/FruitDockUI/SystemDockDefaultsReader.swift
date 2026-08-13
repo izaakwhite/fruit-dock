@@ -29,6 +29,16 @@ final class SystemDockDefaultsReader: SystemDockReading {
         defaults?.array(forKey: SystemDockPreferences.recentAppsKey) ?? []
     }
 
+    var tileSize: Double? {
+        // Absent on a Mac whose Dock size was never changed, and nil must mean
+        // that rather than zero — a zero here would produce icons of no size.
+        guard let defaults,
+              defaults.object(forKey: SystemDockPreferences.tileSizeKey) != nil
+        else { return nil }
+
+        return defaults.double(forKey: SystemDockPreferences.tileSizeKey)
+    }
+
     var showsRecentApplications: Bool? {
         // `bool(forKey:)` cannot distinguish "off" from "never set", and the
         // key is absent on a Mac where the user never touched the setting —

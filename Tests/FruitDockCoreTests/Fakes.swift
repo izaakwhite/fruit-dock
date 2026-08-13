@@ -78,14 +78,20 @@ final class FakeSystemDock: SystemDockReading {
     var recentApplicationTiles: [Any]
     var showsRecentApplications: Bool?
 
+    /// nil is the common case, not an edge one: the key is absent on any Mac
+    /// whose Dock size was never changed.
+    var tileSize: Double?
+
     init(
         persistent: [ApplicationInfo] = [],
         recents: [ApplicationInfo] = [],
-        showsRecentApplications: Bool? = nil
+        showsRecentApplications: Bool? = nil,
+        tileSize: Double? = nil
     ) {
         self.persistentApplicationTiles = persistent.map(Fixture.tile)
         self.recentApplicationTiles = recents.map(Fixture.tile)
         self.showsRecentApplications = showsRecentApplications
+        self.tileSize = tileSize
     }
 
     /// Simulates the Dock rewriting `recent-apps`, which it does as apps are

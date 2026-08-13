@@ -62,6 +62,11 @@ public protocol SystemDockReading: AnyObject {
     /// The user's "Show recent applications in Dock" setting, or nil when they
     /// have never changed it — a missing key is not the same as `false`.
     var showsRecentApplications: Bool? { get }
+
+    /// Apple's Dock icon size (`tilesize`), or nil when never changed from the
+    /// default. Raw and unvalidated, as with the tiles: interpreting it is the
+    /// domain's job, so the clamping can be tested from literal values.
+    var tileSize: Double? { get }
 }
 
 /// Supplies the applications installed on this Mac.

@@ -170,6 +170,14 @@ struct DockCoordinatorTests {
         #expect(subject.presenter.renderedElements.first?.entry?.isRunning == false)
     }
 
+    @Test("A first launch adopts the system Dock's icon size")
+    func firstLaunchSeedsIconSize() {
+        let systemDock = FakeSystemDock(tileSize: 66)
+        let subject = makeSubject(configuration: nil, systemDock: systemDock)
+
+        #expect(subject.coordinator.configuration.iconSize == 66)
+    }
+
     @Test("Deleted apps are not seeded")
     func firstLaunchSkipsDeletedApps() {
         // Apple's Dock keeps tiles for apps that have been removed, so a tile
