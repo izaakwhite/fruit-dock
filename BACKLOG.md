@@ -14,7 +14,23 @@ Severity: 🔴 blocks progress · 🟡 needs resolving before its phase · 🟢 
 
 These have no technical answer. They are yours to make, and the roadmap branches on them.
 
-### ✅ B1 — Pricing — RESOLVED 2026-08-11
+### ✅ B1 — Pricing — REVERSED 2026-08-13
+
+**Superseded. fruit-dock is free and GPLv3.** The $5 lifetime decision below stood for two days and is kept for its reasoning, not its conclusion.
+
+**Why it changed.** Two much larger projects (B2) are GPLv3 and free. Competing on price against $0 was already unattractive; adopting GPLv3 additionally makes their work legally available to build on, which is worth more than a price that was covering an Apple Developer subscription and little else.
+
+**What this forecloses, permanently.** Once a build incorporating GPLv3 code ships, this project cannot be relicensed proprietary. Not "would be awkward" — cannot, short of removing every borrowed line and every line derived from one. Charging remains legally possible and practically pointless: any recipient may publish the source and give it away.
+
+**What it obliges.** See **B9**.
+
+**Consequences that reverse with it:**
+- **B3 stops blocking.** It only mattered because a commercial product needed a clean grant.
+- **B6 is resolved**, not merely mitigated.
+- **E2 ($99/yr) is no longer needed for the product to exist** — only to distribute notarized binaries (T5). Building from source needs neither.
+
+<details>
+<summary>Original decision, 2026-08-11</summary>
 
 **Decision: $5 lifetime as an early-adopter price, raised for new users once the product gains traction. Existing buyers grandfathered.**
 
@@ -26,6 +42,21 @@ Positioning: $5 against a $37.99 lifetime competitor is a deliberate ~7× underc
 - **This is now a commercial product**, so **B3 (no LICENSE file on ExtraDock) is genuinely blocking**, not academic.
 - Phase 7 stays in scope in full: Developer ID, notarization, licensing infrastructure.
 - Three new concerns created — see *Commercial / licensing* below.
+
+</details>
+
+### 🔴 B9 — GPLv3 obligations now bind this project
+**Phase:** all · **Added 2026-08-13** · **Supersedes:** B6
+
+Adopting GPLv3 is a set of standing duties, not a one-off file:
+
+- **Source with every binary.** Anyone given a build is entitled to the corresponding source. A public repository satisfies this as long as the tag matching a release stays reachable.
+- **Attribution is part of writing the code, not an audit afterwards.** Every borrowed fragment gets a comment at the point of use and a row in [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md). Reconstructing provenance later is unreliable, and being wrong is a licence violation rather than untidiness.
+- **No additional restrictions.** No clause may narrow what GPLv3 grants — no field-of-use limits, no anti-redistribution terms, no telemetry the user cannot refuse.
+- **Contributions inherit it.** Anyone contributing does so under GPLv3, and every contributor keeps their own copyright. That is what makes relicensing later impossible in practice rather than merely difficult.
+- **Compatible inbound licences:** GPLv3, and MIT / BSD / Apache-2.0 one-way into GPLv3. **Unlicensed is not permissive** — no licence means no grant (B3).
+
+Not yet done: the repository is public and licensed, but no release has been tagged, so the source-with-binary obligation has not yet been tested against an actual distributed build.
 
 ### 🔴 B2 — Fork vs. greenfield undecided
 **Phase:** 0 · **Blocks:** Phases 1–3
@@ -44,7 +75,15 @@ Evaluation criteria are in ROADMAP.md §0.1. This is an hour of work that could 
 
 Both dwarf this project and ExtraDock alike. Neither can be borrowed from, and the reason is B6 below.
 
-### 🔴 B6 — GPLv3 prior art is incompatible with the pricing decision
+### ✅ B6 — GPLv3 prior art is incompatible with the pricing decision — RESOLVED 2026-08-13
+
+**Resolved by changing the pricing decision rather than by avoiding the code.** fruit-dock is GPLv3, so DockDoor and Docky may now be read *and* borrowed from, subject to the attribution duties in **B9**.
+
+Worth keeping in mind that borrowing is now permitted, not obligatory. Neither project shares this one's architecture — Docky drives windows through private SkyLight SPI (B8) and neither separates decisions from AppKit the way `FruitDockCore` does — so most fragments would need rewriting to fit, at which point the borrowing is the idea rather than the code. Take what genuinely helps; attribute all of it.
+
+The original concern follows.
+
+### ~~🔴 B6 — GPLv3 prior art is incompatible with the pricing decision~~
 **Phase:** 0 · **Added 2026-08-12** · **Depends on:** B1
 
 DockDoor and Docky are both GPLv3, which is copyleft: any derivative must also be GPLv3, with source offered to every recipient and no restriction on redistribution. Selling GPL software is permitted, but the first buyer may lawfully publish the source and give it away, so a $5 lifetime licence (B1) has nothing to hold it up.

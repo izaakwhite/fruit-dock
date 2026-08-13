@@ -143,6 +143,32 @@ Fixing this properly is [issue #5](https://github.com/izaakwhite/fruit-dock/issu
 
 ---
 
+## Licensing — GPLv3
+
+fruit-dock is free and **GPLv3** (changed 2026-08-13; the reasoning is in
+BACKLOG B1 and B9). This constrains how code enters the project:
+
+- **Borrowing is allowed and must be attributed at the point of use.** A comment
+  naming the project and its licence, *and* a row in
+  [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md). One without the other is
+  the one that gets lost.
+- **Compatible inbound:** GPLv3, and MIT / BSD / Apache-2.0 one way into GPLv3.
+- **Unlicensed is not permissive.** No licence means no grant, so the default is
+  that no permission exists.
+- **Never add a term that narrows GPLv3** — no field-of-use limits, no
+  anti-redistribution clauses, no telemetry the user cannot refuse.
+- Contributors keep their own copyright, which is why relicensing later is not
+  merely difficult but impossible in practice.
+
+[DockDoor](https://github.com/ejbills/DockDoor) and
+[Docky](https://github.com/josejuanqm/docky) may now be read *and* borrowed
+from. Neither shares this architecture — Docky drives windows through private
+SkyLight SPI, which this project deliberately avoids (B8) — so most fragments
+need rewriting to fit, at which point what is borrowed is the idea. Attribute it
+anyway.
+
+---
+
 ## Conventions
 
 **Comments explain why, never what.** A comment earns its place by recording a

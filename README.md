@@ -1,5 +1,7 @@
 # fruit-dock
 
+**Free and open source.** [GPLv3](./LICENSE).
+
 A macOS menu-bar utility that puts a dock on the displays Apple's Dock isn't on.
 
 macOS keeps its Dock on exactly one screen at a time. fruit-dock fills in the
@@ -233,6 +235,29 @@ The guiding rule: **decisions live in pure functions in `FruitDockCore`**, and
 the AppKit layer executes them without deciding anything. That is what lets a
 test simulate unplugging a monitor by passing a shorter array. See
 [CLAUDE.md](./CLAUDE.md) for the full conventions.
+
+## Licence
+
+GPLv3 — see [LICENSE](./LICENSE). Free to use, study, change, and share; any
+distributed build must come with its source under the same terms.
+
+Code borrowed from other projects is recorded in
+[THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md), which also sets out what may
+and may not be brought in.
+
+### Related projects
+
+Both are GPLv3 and both are excellent. If they cover what you need, use them:
+
+- **[DockDoor](https://github.com/ejbills/DockDoor)** — window previews on Dock
+  hover, and a better Alt-Tab. Can lock the Dock to one monitor so it stops
+  moving.
+- **[Docky](https://github.com/josejuanqm/docky)** — a full Dock replacement,
+  with widgets, folders, themes, and a built-in Launchpad.
+
+fruit-dock does something neither does: **a dock on every display at once**, each
+launching apps onto the display it sits on, staying out of the way of Apple's
+Dock as that moves between screens.
 
 ## Status
 
