@@ -62,24 +62,25 @@ The app also offers one-click routes to the relevant panes under
 **System Settings** in its menu: Dock & Menu Bar, Displays, Accessibility
 Display, and Privacy Accessibility.
 
-### ⚠️ The permission does not survive a rebuild
+### ⚠️ If you sign ad-hoc, the permission won't survive a rebuild
 
-macOS ties Accessibility grants to an app's *code signing identity*. Every time
-you change code and rebuild, the ad-hoc signature changes, and macOS treats the
-result as a different application — **the grant silently stops applying while
-System Settings still shows it switched on.**
+macOS ties Accessibility grants to an app's *code signing identity*. With
+**ad-hoc** signing that identity is derived from the binary, so any edit that
+alters generated code produces a different app as far as macOS is concerned —
+**the grant silently stops applying while System Settings still shows it
+switched on.**
 
 Measured on this project:
 
-| Scenario | Code signature | Grant survives? |
+| Signing | Identity across a real code change | Grant survives? |
 |---|---|---|
-| Rebuild, no source change | unchanged | ✅ |
-| Comment-only edit | unchanged | ✅ |
-| **Any change that alters codegen** | **changes** | ❌ |
+| Ad-hoc | changes | ❌ |
+| **Apple Development certificate** | **unchanged** | ✅ |
 
-If window placement stops working after you edit something, this is why. Remove
-fruit-dock from the Accessibility list and re-add it, or sign with a stable
-identity (below).
+The fix is free: create an Apple Development certificate and the build script
+uses it automatically — see [Code signing](#code-signing). If you are signing
+ad-hoc and placement stops working after an edit, remove fruit-dock from the
+Accessibility list and add it again.
 
 ### What it reads
 
@@ -109,18 +110,44 @@ The fixed `CFBundleIdentifier` (`com.izaakwhite.fruit-dock`, in
 stable identity to attach permissions to. **Don't change them casually** — a
 changed bundle identifier is a new app as far as TCC is concerned.
 
-### A stable identity — still free
+### A stable identity — still free, and worth it
 
 Ad-hoc signatures change on every meaningful build, which is what breaks the
-Accessibility grant. Signing with an **Apple Development** certificate gives a
-stable identity and does not require the paid Developer Program — an Apple ID
-is enough. Create one in Xcode under **Settings → Accounts → Manage
-Certificates → +**, then:
+Accessibility grant. An **Apple Development** certificate fixes that and does
+not require the paid Developer Program — any Apple ID will do.
+
+Create one in Xcode: **Settings → Accounts → Manage Certificates → +
+→ Apple Development**. The build script finds it automatically:
 
 ```sh
-security find-identity -v -p codesigning     # find your identity name
-codesign --force --deep --sign "Apple Development: you@example.com (TEAMID)" \
-  --identifier com.izaakwhite.fruit-dock build/fruit-dock.app
+security find-identity -v -p codesigning   # confirm it is there
+./Scripts/make-app-bundle.sh               # picks it up on its own
+```
+
+Set `FRUIT_DOCK_SIGN_IDENTITY` to choose between several certificates.
+
+Why this works: TCC matches an app against its *designated requirement*. Ad-hoc
+signing pins a `cdhash`, which changes whenever the binary does. A certificate
+pins identity instead — bundle identifier plus the signing authority — and
+nothing in that expression depends on the binary's contents, so the grant keeps
+applying across rebuilds.
+
+#### If your certificate exists but isn't found
+
+`security find-identity -v` lists only identities whose **full chain**
+validates, so a perfectly good certificate shows up as "0 valid identities"
+when an intermediate is missing or expired. Check which generation issued it:
+
+```sh
+security find-certificate -c "Apple Development: you@example.com" -p \
+  | openssl x509 -noout -issuer -dates
+```
+
+Look at the `OU=` in the issuer (`G3`, `G4`, …), download that generation from
+<https://www.apple.com/certificateauthority/>, and add it:
+
+```sh
+security add-certificates -k ~/Library/Keychains/login.keychain-db AppleWWDRCAG3.cer
 ```
 
 ### Distribution — paid

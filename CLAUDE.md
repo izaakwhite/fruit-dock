@@ -21,12 +21,13 @@ open build/fruit-dock.app
 ```
 
 > **`swift run` cannot hold Accessibility permission.** It produces a bare,
-> ad-hoc-signed binary whose code-signing identifier is derived from the binary
-> itself, so every rebuild is a different application to macOS and any granted
-> permission silently stops applying. Anything touching window placement must be
-> tested via `Scripts/make-app-bundle.sh`. See **T13** — this is measured, not
-> theoretical, and it is the reason window placement appeared broken for a long
-> time while the code was fine.
+> ad-hoc-signed binary whose identity is derived from the binary itself, so
+> every rebuild is a different application to macOS and any granted permission
+> silently stops applying. Anything touching window placement must be tested via
+> `Scripts/make-app-bundle.sh`, which signs with an Apple Development
+> certificate when one is installed — that makes the identity stable across
+> rebuilds and the grant persistent. See **T13** (resolved); it is the reason
+> window placement appeared broken for a long time while the code was fine.
 
 Coverage:
 ```

@@ -198,7 +198,26 @@ Worth confirming by hand, in this order:
 
 **Read T13 first — it may make all of the above impossible to test as things stand.**
 
-### 🔴 T13 — Accessibility permission cannot survive a code change
+### ✅ T13 — Accessibility permission cannot survive a code change — RESOLVED 2026-08-12
+
+**Fixed by signing with an Apple Development certificate.** `Scripts/make-app-bundle.sh` now prefers a real certificate and falls back to ad-hoc only when none is installed.
+
+The measurement that settles it is the *designated requirement*, which is what TCC matches an app against. Ad-hoc signing pins a `cdhash`, which changes with the binary. A certificate pins identity instead:
+
+```
+identifier "com.izaakwhite.fruit-dock" and anchor apple generic
+  and certificate leaf[subject.CN] = "Apple Development: … (UUL7LK93YY)"
+```
+
+Byte-identical before and after a change to `DockBarView.spacing` — a real codegen change, not a comment. Nothing in that expression depends on the binary's contents, so rebuilds no longer invalidate the grant.
+
+Cost nothing: an Apple Development certificate is free with any Apple ID and does **not** require the paid Developer Program (E2 stays deferred). Distribution still needs Developer ID and notarization — see T5.
+
+**Trap worth remembering.** The certificate existed but `security find-identity -v -p codesigning` reported *zero valid identities*, which reads as "no certificate". The certificate was fine; the chain was not. It is issued by WWDR **G3**, and only the **G1** intermediate — expired February 2023 — was in the keychain. Installing the G3 intermediate from <https://www.apple.com/certificateauthority/> fixed it immediately. Diagnose with `openssl x509 -noout -issuer` on the certificate and match the generation, rather than assuming the certificate is bad.
+
+The original entry follows, since the reasoning is what made the fix findable.
+
+### 🔴 T13 (original) — Accessibility permission cannot survive a code change
 **Phase:** 3 · **Added 2026-08-11 · Partly CONFIRMED 2026-08-12**
 
 The agent's original diagnosis was right, and the signing half is now measured rather than suspected.
