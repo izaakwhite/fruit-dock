@@ -242,30 +242,5 @@ protocol AXValueUnwrappable {
 extension CGPoint: AXValueUnwrappable {}
 extension CGSize: AXValueUnwrappable {}
 
-// MARK: - Bridging to the domain's plain values
-
-/// The domain layer holds this geometry in plain numbers so it can be tested
-/// with literals; these are the only conversions between it and CoreGraphics.
-extension ScreenPoint {
-    init(_ point: CGPoint) {
-        self.init(x: point.x, y: point.y)
-    }
-}
-
-extension ScreenSize {
-    init(_ size: CGSize) {
-        self.init(width: size.width, height: size.height)
-    }
-}
-
-extension ScreenRect {
-    init(_ rect: CGRect) {
-        self.init(origin: ScreenPoint(rect.origin), size: ScreenSize(rect.size))
-    }
-}
-
-extension CGPoint {
-    init(_ point: ScreenPoint) {
-        self.init(x: point.x, y: point.y)
-    }
-}
+// Conversions between the domain's plain geometry and CoreGraphics live in
+// ScreenGeometry+CoreGraphics.swift.

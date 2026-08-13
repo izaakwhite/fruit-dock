@@ -277,25 +277,19 @@ final class DockPanel: NSPanel {
     /// that global space, which is why every edge is expressed relative to
     /// `area` and never to zero.
     static func frame(for size: NSSize, edge: DockEdge, on screen: NSScreen) -> NSRect {
-        let area = screen.visibleFrame
-
-        switch edge {
-        case .bottom:
-            return NSRect(
-                x: area.midX - size.width / 2, y: area.minY + margin,
-                width: size.width, height: size.height)
-        case .top:
-            return NSRect(
-                x: area.midX - size.width / 2, y: area.maxY - size.height - margin,
-                width: size.width, height: size.height)
-        case .left:
-            return NSRect(
-                x: area.minX + margin, y: area.midY - size.height / 2,
-                width: size.width, height: size.height)
-        case .right:
-            return NSRect(
-                x: area.maxX - size.width - margin, y: area.midY - size.height / 2,
-                width: size.width, height: size.height)
-        }
+        // The arithmetic itself lives in `DockLayout`, where it is tested
+        // against literal coordinates — including displays whose origin is
+        // negative or stacked above the primary, which no single-monitor test
+        // would ever reach. This is only the conversion.
+        NSRect(
+            DockLayout.frame(
+                for: ScreenSize(size),
+                edge: edge,
+                // `visibleFrame`, so the dock clears the menu bar and Apple's
+                // Dock rather than hiding underneath them.
+                in: ScreenRect(screen.visibleFrame),
+                margin: margin
+            )
+        )
     }
 }

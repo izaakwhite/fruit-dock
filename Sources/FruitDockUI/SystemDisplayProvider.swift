@@ -37,20 +37,14 @@ final class SystemDisplayProvider: DisplayProviding {
     /// Returns false when the Dock is hidden, which is correct: a hidden Dock
     /// leaves the screen to us.
     static func hostsSystemDock(_ screen: NSScreen) -> Bool {
-        let full = screen.frame
-        let visible = screen.visibleFrame
-
-        // A tolerance, since these are floating point and scaled displays can
-        // leave sub-point differences.
-        let threshold: CGFloat = 1
-
-        let bottomInset = visible.minY - full.minY
-        let leftInset = visible.minX - full.minX
-        let rightInset = full.maxX - visible.maxX
-
-        return bottomInset > threshold
-            || leftInset > threshold
-            || rightInset > threshold
+        // The rule lives in `DisplayGeometry`, where every arrangement — Dock
+        // at the bottom, left, right, hidden, and the menu-bar-only case that
+        // must *not* count — is covered by tests. Previously this could only be
+        // checked by dragging the real Dock between monitors by hand.
+        DisplayGeometry.hostsSystemDock(
+            frame: ScreenRect(screen.frame),
+            visibleFrame: ScreenRect(screen.visibleFrame)
+        )
     }
 
     /// Watches for Apple's Dock moving between displays.
