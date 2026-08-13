@@ -10,6 +10,7 @@ final class DockPanel: NSPanel {
     let displayID: DisplayID
     private let edge: DockEdge
     private let bar: DockBarView
+    private let iconSize: CGFloat
     private var background: NSView?
     private let hoverLabel = HoverLabelPanel()
 
@@ -24,7 +25,18 @@ final class DockPanel: NSPanel {
     init(display: DisplayInfo, screen: NSScreen, configuration: DockConfiguration) {
         self.displayID = display.id
         self.edge = configuration.edge
-        self.bar = DockBarView(isVertical: configuration.edge.isVertical)
+
+        // Sized to this display, not to a constant. The same dock that suits a
+        // laptop looks lost on a large external monitor, and vice versa. Fixed
+        // at construction because a panel already belongs to one display for
+        // its lifetime — a display that changes resolution is torn down and
+        // rebuilt rather than resized.
+        self.iconSize = DockSizing.iconSize(
+            base: configuration.iconSize,
+            displayHeight: screen.frame.height
+        )
+        self.bar = DockBarView(
+            isVertical: configuration.edge.isVertical, iconSize: iconSize)
         bar.displayID = display.id
 
         super.init(
@@ -244,7 +256,7 @@ final class DockPanel: NSPanel {
         guard let screen = SystemDisplayProvider.screen(for: displayID) else { return }
 
         let size = elements.map {
-            DockBarView.size(for: $0, isVertical: edge.isVertical)
+            DockBarView.size(for: $0, isVertical: edge.isVertical, iconSize: iconSize)
         } ?? frame.size
 
         let target = Self.frame(for: size, edge: edge, on: screen)

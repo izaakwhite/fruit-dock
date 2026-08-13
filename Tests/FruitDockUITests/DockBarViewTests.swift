@@ -22,12 +22,12 @@ struct DockBarViewTests {
     }
 
     private var breadth: CGFloat {
-        DockBarView.padding * 2 + DockBarView.iconSize + DockBarView.indicatorLane
+        DockBarView.padding * 2 + DockBarView.defaultIconSize + DockBarView.indicatorLane
     }
 
     @Test("An empty dock is one icon square, in either orientation")
     func emptyDockIsIconSquare() {
-        let expected = NSSize(width: DockBarView.iconSize, height: DockBarView.iconSize)
+        let expected = NSSize(width: DockBarView.defaultIconSize, height: DockBarView.defaultIconSize)
 
         #expect(DockBarView.size(for: [], isVertical: false) == expected)
         #expect(DockBarView.size(for: [], isVertical: true) == expected)
@@ -35,7 +35,7 @@ struct DockBarViewTests {
 
     @Test("A single icon's run is padding plus one icon, no spacing added")
     func singleElementHasNoInterElementSpacing() {
-        let run = DockBarView.padding * 2 + DockBarView.iconSize
+        let run = DockBarView.padding * 2 + DockBarView.defaultIconSize
         let size = DockBarView.size(for: [.trash], isVertical: false)
 
         #expect(size == NSSize(width: run, height: breadth))
@@ -45,7 +45,7 @@ struct DockBarViewTests {
     func horizontalPutsRunOnWidth() {
         let elements = [entry(), entry(), .separator, .trash]
         let run = DockBarView.padding * 2
-            + DockBarView.iconSize * 3
+            + DockBarView.defaultIconSize * 3
             + DockBarView.separatorExtent
             + CGFloat(elements.count - 1) * DockBarView.spacing
 
@@ -58,7 +58,7 @@ struct DockBarViewTests {
     func verticalPutsRunOnHeight() {
         let elements = [entry(), .separator, entry()]
         let run = DockBarView.padding * 2
-            + DockBarView.iconSize * 2
+            + DockBarView.defaultIconSize * 2
             + DockBarView.separatorExtent
             + CGFloat(elements.count - 1) * DockBarView.spacing
 

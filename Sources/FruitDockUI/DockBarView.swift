@@ -8,7 +8,9 @@ import FruitDockCore
 /// is the coordinator's.
 @MainActor
 final class DockBarView: NSView {
-    static let iconSize: CGFloat = 48
+    /// Fallback only. The size actually drawn is `iconSize`, which comes from
+    /// the configuration scaled to the display — see `DockSizing`.
+    static let defaultIconSize: CGFloat = 48
     static let spacing: CGFloat = 6
     static let padding: CGFloat = 8
     /// Room beneath an icon for the running dot.
@@ -30,8 +32,13 @@ final class DockBarView: NSView {
     private let stack = NSStackView()
     private let isVertical: Bool
 
-    init(isVertical: Bool) {
+    /// Scaled to this bar's display rather than fixed, so a laptop and a large
+    /// external monitor each get a dock proportionate to what they are.
+    let iconSize: CGFloat
+
+    init(isVertical: Bool, iconSize: CGFloat = defaultIconSize) {
         self.isVertical = isVertical
+        self.iconSize = iconSize
         super.init(frame: .zero)
 
         stack.orientation = isVertical ? .vertical : .horizontal
@@ -50,21 +57,28 @@ final class DockBarView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     /// Extent one element occupies along the dock's long axis.
-    private static func extent(of element: DockElement) -> CGFloat {
+    private static func extent(of element: DockElement, iconSize: CGFloat) -> CGFloat {
         switch element {
         case .separator: separatorExtent
         case .app, .trash: iconSize
         }
     }
 
-    /// The size this bar needs for `elements`, in the current orientation.
-    static func size(for elements: [DockElement], isVertical: Bool) -> NSSize {
+    /// The size a bar needs for `elements`, in the given orientation.
+    ///
+    /// Static and fully parameterised so the panel can ask what size it will
+    /// need before there is a bar to ask — and so it can be tested without one.
+    static func size(
+        for elements: [DockElement],
+        isVertical: Bool,
+        iconSize: CGFloat = defaultIconSize
+    ) -> NSSize {
         guard !elements.isEmpty else {
             return NSSize(width: iconSize, height: iconSize)
         }
 
         let run = padding * 2
-            + elements.reduce(0) { $0 + extent(of: $1) }
+            + elements.reduce(0) { $0 + extent(of: $1, iconSize: iconSize) }
             + CGFloat(elements.count - 1) * spacing
         let breadth = padding * 2 + iconSize + indicatorLane
 
@@ -91,16 +105,17 @@ final class DockBarView: NSView {
 
     private func makeView(for element: DockElement) -> NSView {
         let view: NSView
-        let extent = Self.extent(of: element)
+        let extent = Self.extent(of: element, iconSize: iconSize)
 
         switch element {
         case .separator:
             view = SeparatorView(isVertical: isVertical)
 
         case .trash:
-            let label = Self.trashHasContents ? "Trash — Full" : "Trash"
+            let isFull = Self.trashHasContents
+            let label = isFull ? "Trash — Full" : "Trash"
             let trash = IconView(
-                icon: Self.trashIcon,
+                icon: trashIcon(isFull: isFull),
                 label: label,
                 isRunning: false
             )
@@ -129,9 +144,9 @@ final class DockBarView: NSView {
 
         view.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            view.widthAnchor.constraint(equalToConstant: isVertical ? Self.iconSize : extent),
+            view.widthAnchor.constraint(equalToConstant: isVertical ? iconSize : extent),
             view.heightAnchor.constraint(
-                equalToConstant: isVertical ? extent : Self.iconSize + Self.indicatorLane
+                equalToConstant: isVertical ? extent : iconSize + Self.indicatorLane
             ),
         ])
         return view
@@ -163,16 +178,42 @@ final class DockBarView: NSView {
         return contents?.contains { $0 != ".DS_Store" } ?? false
     }
 
-    /// Apple's own Trash artwork, full or empty to match.
+    /// The Dock's own Trash artwork, matching state and appearance.
     ///
-    /// Not `icon(forFile:)` on `~/.Trash`: that answers with the icon for a
-    /// *folder at that path*, which is a plain folder rather than the Trash
-    /// can, and never changes when the Trash fills or empties. `trashFullName`
-    /// and `trashEmptyName` are the images the Dock itself uses.
-    private static var trashIcon: NSImage {
-        let name = trashHasContents ? NSImage.trashFullName : NSImage.trashEmptyName
-        return NSImage(named: name) ?? NSWorkspace.shared.icon(forFile: trashPath)
+    /// Loaded from `Dock.app`'s resources because that is literally the image
+    /// the real Dock draws, and the point here is to be indistinguishable from
+    /// it. `icon(forFile:)` on `~/.Trash` answers with the icon for a *folder
+    /// at that path* — a plain folder, not a bin, and unchanged as the Trash
+    /// fills. `NSImage.trashEmptyName` is closer but is the generic system
+    /// symbol rather than the Dock's.
+    ///
+    /// The `2` suffix is the dark-appearance variant: the unsuffixed art is a
+    /// light bin meant for a light dock, and drawing it in dark mode gives a
+    /// near-white bin against everything around it.
+    ///
+    /// Undocumented paths, so every step degrades: a missing file falls back to
+    /// the system symbol, and a missing symbol to the folder icon. A renamed
+    /// resource costs fidelity, never a crash or a blank tile.
+    private func trashIcon(isFull: Bool) -> NSImage {
+        let isDark = effectiveAppearance.bestMatch(
+            from: [.aqua, .darkAqua]) == .darkAqua
+
+        let name = "s-trash\(isFull ? "full" : "empty")\(isDark ? "2" : "")"
+        let path = "\(Self.dockResources)/\(name)@2x.png"
+
+        if let art = NSImage(contentsOfFile: path) {
+            // Tagged as a template so AppKit will not re-tint artwork that is
+            // already the right colour for this appearance.
+            art.isTemplate = false
+            return art
+        }
+
+        let symbol = isFull ? NSImage.trashFullName : NSImage.trashEmptyName
+        return NSImage(named: symbol) ?? NSWorkspace.shared.icon(forFile: Self.trashPath)
     }
+
+    private static let dockResources =
+        "/System/Library/CoreServices/Dock.app/Contents/Resources"
 }
 
 /// The hairline dividing applications from Trash, as in Apple's Dock.
