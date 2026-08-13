@@ -34,6 +34,47 @@ Positioning: $5 against a $37.99 lifetime competitor is a deliberate ~7× underc
 
 Evaluation criteria are in ROADMAP.md §0.1. This is an hour of work that could delete weeks.
 
+**Update 2026-08-12 — two much larger projects found, both GPLv3.**
+
+| Project | Stars | Commits | Licence | What it is |
+|---|---|---|---|---|
+| [ejbills/DockDoor](https://github.com/ejbills/DockDoor) | 5.9k | 1,381 | **GPLv3** | Dock window previews, Alt-Tab switching |
+| [josejuanqm/docky](https://github.com/josejuanqm/docky) | 1.1k | 310 | **GPLv3** | Full Dock replacement — widgets, Launchpad, folders, themes |
+| henningziech/extradock | — | 39 | MIT (nominally, see B3) | Docks on secondary displays |
+
+Both dwarf this project and ExtraDock alike. Neither can be borrowed from, and the reason is B6 below.
+
+### 🔴 B6 — GPLv3 prior art is incompatible with the pricing decision
+**Phase:** 0 · **Added 2026-08-12** · **Depends on:** B1
+
+DockDoor and Docky are both GPLv3, which is copyleft: any derivative must also be GPLv3, with source offered to every recipient and no restriction on redistribution. Selling GPL software is permitted, but the first buyer may lawfully publish the source and give it away, so a $5 lifetime licence (B1) has nothing to hold it up.
+
+This is not a licensing footnote, it is a constraint on how the project may be built:
+
+- **Do not copy code from either.** Not a snippet, not a helper.
+- **Be careful reading them for solutions.** Reproducing a distinctive implementation from memory carries the same risk as copying it. Where one of them has solved something we need, prefer Apple's documentation and a clean-room implementation, and record that the idea came from elsewhere.
+- MIT prior art (ExtraDock) remains safe to learn from and to borrow from with attribution, if B3 is ever resolved.
+
+The alternative is to abandon B1 and make this GPLv3 too, which forecloses charging in practice.
+
+### 🟢 B7 — The differentiator survives the prior art
+**Phase:** 0 · **Added 2026-08-12**
+
+Worth recording because the finding could easily be read as fatal, and is not.
+
+Neither large project does what this one does. **Docky** replaces the single Dock with a richer single Dock. **DockDoor** adds previews and switching, and its multi-display feature is *locking* the Dock to one monitor — the opposite approach to the same annoyance: it stops the Dock moving, where this stops the other displays being empty.
+
+Simultaneous docks on every display, each one launching onto the display it sits on, is still unoccupied. That is the whole product, and it should be said plainly wherever the project is described.
+
+Bears on **B4** (is the premise already solved by macOS?): DockDoor's locking feature is evidence the annoyance is real and widely felt — 5.9k stars' worth — while its chosen remedy is not this one.
+
+### 🟡 B8 — Docky uses private SPI; this project does not
+**Phase:** 3 · **Added 2026-08-12**
+
+Docky positions windows and renders previews through private SkyLight / CoreGraphics Services SPI, which is how it does things the public Accessibility API cannot. The cost is that it can never ship through the App Store and breaks whenever Apple changes an unpublished interface.
+
+`WindowPlacer` uses the public Accessibility API instead. That is the right trade here — A1 already rules out the App Store, but SPI would make every macOS update a potential outage for an optional feature — and it explains why some behaviour will stay out of reach. **Do not reach for SkyLight to fix T11.**
+
 ### 🔴 B3 — There is no LICENSE file (escalated 2026-08-11)
 **Phase:** 0 · **Blocks:** B2 · **Evidence:** [EVALUATION.md](./EVALUATION.md)
 
