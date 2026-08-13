@@ -11,12 +11,14 @@ final class DockBarView: NSView {
     /// Fallback only. The size actually drawn is `iconSize`, which comes from
     /// the configuration scaled to the display — see `DockSizing`.
     static let defaultIconSize: CGFloat = 48
-    static let spacing: CGFloat = 6
-    static let padding: CGFloat = 8
-    /// Room beneath an icon for the running dot.
-    static let indicatorLane: CGFloat = 7
-    /// A separator takes far less room than an icon.
-    static let separatorExtent: CGFloat = 11
+    /// The measurements themselves live in the domain, so that whether a dock
+    /// fits its display can be decided there — see `DockSizing`.
+    static let metrics = DockMetrics.default
+
+    static var spacing: CGFloat { metrics.spacing }
+    static var padding: CGFloat { metrics.padding }
+    static var indicatorLane: CGFloat { metrics.indicatorLane }
+    static var separatorExtent: CGFloat { metrics.separatorExtent }
 
     weak var actionHandler: (any DockActionHandling)?
 
@@ -32,9 +34,10 @@ final class DockBarView: NSView {
     private let stack = NSStackView()
     private let isVertical: Bool
 
-    /// Scaled to this bar's display rather than fixed, so a laptop and a large
-    /// external monitor each get a dock proportionate to what they are.
-    let iconSize: CGFloat
+    /// Fitted to this bar's display *and* to how much it currently holds, so a
+    /// laptop and a large monitor each get a dock proportionate to what they
+    /// are, and neither overflows as apps open. Set through `update`.
+    private(set) var iconSize: CGFloat
 
     init(isVertical: Bool, iconSize: CGFloat = defaultIconSize) {
         self.isVertical = isVertical
@@ -77,19 +80,30 @@ final class DockBarView: NSView {
             return NSSize(width: iconSize, height: iconSize)
         }
 
-        let run = padding * 2
-            + elements.reduce(0) { $0 + extent(of: $1, iconSize: iconSize) }
-            + CGFloat(elements.count - 1) * spacing
-        let breadth = padding * 2 + iconSize + indicatorLane
+        // Counted rather than measured element by element, so this and the
+        // fitting calculation in `DockSizing` cannot drift apart.
+        let separators = elements.count { $0 == .separator }
+        let run = metrics.length(
+            tileCount: elements.count - separators,
+            separatorCount: separators,
+            iconSize: iconSize
+        )
+        let breadth = metrics.breadth(iconSize: iconSize)
 
         return isVertical
             ? NSSize(width: breadth, height: run)
             : NSSize(width: run, height: breadth)
     }
 
-    func update(elements: [DockElement]) {
-        guard elements != self.elements else { return }
+    func update(elements: [DockElement], iconSize: CGFloat) {
+        // Both have to be checked. The icon size is fitted to how many elements
+        // there are, so launching an app can change the size without changing
+        // the list, and quitting one can change the list without changing the
+        // size.
+        guard elements != self.elements || iconSize != self.iconSize else { return }
+
         self.elements = elements
+        self.iconSize = iconSize
 
         // Any hovered icon is about to be destroyed; its label must go too.
         onHover(nil)

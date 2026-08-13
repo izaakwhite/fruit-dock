@@ -10,7 +10,11 @@ final class DockPanel: NSPanel {
     let displayID: DisplayID
     private let edge: DockEdge
     private let bar: DockBarView
-    private let iconSize: CGFloat
+    /// The size currently being drawn at. Starts as the display's preference
+    /// and is re-fitted whenever the contents change, so the corner radius
+    /// derived from it stays in proportion to the icons rather than to
+    /// whatever they measured when the panel was built.
+    private var iconSize: CGFloat
 
     /// The configured base size, kept so the panel can tell whether a display
     /// change has invalidated the size it was built at.
@@ -201,6 +205,25 @@ final class DockPanel: NSPanel {
         (iconSize * 0.375).rounded()
     }
 
+    /// Re-rounds the existing background rather than rebuilding it.
+    ///
+    /// A rebuild would restart the glass, which reads as a flash every time an
+    /// app launches. Both shapes are settable in place — `NSGlassEffectView`
+    /// exposes `cornerRadius` directly, everything else is layer-backed — and
+    /// the Increase Contrast path wraps its glass one level down, so the search
+    /// has to look inside as well as at the top.
+    private func applyCornerRadius(_ radius: CGFloat) {
+        guard let background else { return }
+
+        for view in [background] + background.subviews {
+            if #available(macOS 26, *), let glass = view as? NSGlassEffectView {
+                glass.cornerRadius = radius
+            } else if view.layer?.cornerRadius != nil, view.layer?.cornerRadius != 0 {
+                view.layer?.cornerRadius = radius
+            }
+        }
+    }
+
     private static func embed(_ content: NSView, edgeToEdgeIn container: NSView) {
         content.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(content)
@@ -262,8 +285,34 @@ final class DockPanel: NSPanel {
     // MARK: - Contents
 
     func update(elements: [DockElement]) {
-        bar.update(elements: elements)
+        // The bar is updated inside, once the size it should draw at is known.
         resizeAndReposition(elements: elements)
+    }
+
+    /// The icon size this dock should draw at, for these contents on this
+    /// screen.
+    ///
+    /// The long axis is the one that has to fit, and which axis that is depends
+    /// on the edge: a dock on the left or right is bounded by the display's
+    /// height, not its width.
+    private static func iconSize(
+        for elements: [DockElement],
+        base: Double,
+        edge: DockEdge,
+        on screen: NSScreen
+    ) -> CGFloat {
+        let separators = elements.count { $0 == .separator }
+        let available = edge.isVertical
+            ? screen.visibleFrame.height
+            : screen.visibleFrame.width
+
+        return DockSizing.iconSize(
+            base: base,
+            displayHeight: screen.frame.height,
+            tileCount: elements.count - separators,
+            separatorCount: separators,
+            availableLength: available
+        )
     }
 
     func updatePosition() {
@@ -300,9 +349,25 @@ final class DockPanel: NSPanel {
     private func resizeAndReposition(elements: [DockElement]?) {
         guard let screen = SystemDisplayProvider.screen(for: displayID) else { return }
 
-        let size = elements.map {
-            DockBarView.size(for: $0, isVertical: edge.isVertical, iconSize: iconSize)
-        } ?? frame.size
+        let size: NSSize
+        if let elements {
+            // Fitted here rather than at construction, because it depends on
+            // how many elements there are and that changes every time an app
+            // launches or quits.
+            let fitted = Self.iconSize(
+                for: elements, base: baseIconSize, edge: edge, on: screen)
+            bar.update(elements: elements, iconSize: fitted)
+
+            if fitted != iconSize {
+                iconSize = fitted
+                applyCornerRadius(Self.cornerRadius(forIconSize: fitted))
+            }
+
+            size = DockBarView.size(
+                for: elements, isVertical: edge.isVertical, iconSize: fitted)
+        } else {
+            size = frame.size
+        }
 
         let target = Self.frame(for: size, edge: edge, on: screen)
 
