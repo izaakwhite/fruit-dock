@@ -90,4 +90,53 @@ struct WindowPlacementRulesTests {
         let minimised = WindowCandidate(isMinimised: true)
         #expect(WindowPlacementRules.windowToMove(among: [minimised]) == .nothingToMove)
     }
+
+    // MARK: - Restoring a minimised window
+
+    @Test("A lone minimised window is restored by a click")
+    func loneMinimisedWindowIsRestored() {
+        // Reported from use: clicking an app whose only window was minimised
+        // activated it with nothing on screen, so the click looked inert.
+        // `activate()` does not un-minimise.
+        let minimised = WindowCandidate(isMinimised: true)
+        #expect(WindowPlacementRules.windowToRestore(among: [minimised]) == 0)
+    }
+
+    @Test("The main window is the one restored when several are minimised")
+    func mainMinimisedWindowIsRestored() {
+        let other = WindowCandidate(isMinimised: true)
+        let main = WindowCandidate(isMain: true, isMinimised: true)
+
+        #expect(WindowPlacementRules.windowToRestore(among: [other, main]) == 1)
+    }
+
+    @Test("Several minimised windows with none nominated restores nothing")
+    func ambiguousMinimisedWindowsRestoreNothing() {
+        // Each was put away deliberately. Guessing brings back the wrong one,
+        // and bringing back all of them is as destructive as moving them all.
+        let windows = [WindowCandidate(isMinimised: true), WindowCandidate(isMinimised: true)]
+        #expect(WindowPlacementRules.windowToRestore(among: windows) == nil)
+    }
+
+    @Test("Nothing is restored while any window is still on screen")
+    func onScreenWindowSuppressesRestore() {
+        // Activation brings the visible window forward by itself. Un-minimising
+        // another one here would return something the user had put away and
+        // never asked for.
+        let minimised = WindowCandidate(isMinimised: true)
+        let onScreen = WindowCandidate(isMain: true)
+
+        #expect(WindowPlacementRules.windowToRestore(among: [minimised, onScreen]) == nil)
+    }
+
+    @Test("An app with no windows has nothing to restore")
+    func noWindowsRestoresNothing() {
+        #expect(WindowPlacementRules.windowToRestore(among: []) == nil)
+    }
+
+    @Test("A full-screen window is not treated as minimised")
+    func fullScreenIsNotRestored() {
+        let fullScreen = WindowCandidate(isMain: true, isFullScreen: true)
+        #expect(WindowPlacementRules.windowToRestore(among: [fullScreen]) == nil)
+    }
 }

@@ -46,6 +46,20 @@ public final class DockCoordinator {
             var seeded = DockConfiguration.default
             seeded.showsRecentApps = SystemDockPreferences.showsRecentApplications(
                 systemDock.showsRecentApplications)
+
+            // Pinned apps are seeded too, not just the preferences. An empty
+            // dock on first launch shows nothing but whatever happens to be
+            // running, so every icon is an app the user could already reach and
+            // clicking one can only ever switch to it — the dock looks broken
+            // precisely because it cannot launch anything. Importing here is
+            // also what the dock was asked to be: a second copy of the one they
+            // already have. Still a seed rather than a mirror, so anything they
+            // pin or remove afterwards is theirs and survives.
+            seeded.pinnedItems = SystemDockPreferences.applications(
+                fromTiles: systemDock.persistentApplicationTiles,
+                isInstalled: applicationCatalog.applicationExists(atPath:)
+            ).map(DockItem.init)
+
             self.configuration = seeded
         }
     }

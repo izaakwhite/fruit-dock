@@ -67,6 +67,39 @@ final class WindowPlacer {
         retries.removeValue(forKey: pid)?.invalidate()
     }
 
+    /// Un-minimises a window if the click asked for one to come back.
+    ///
+    /// `NSRunningApplication.activate()` does not do this. An app whose windows
+    /// are all in the Dock activates with nothing on screen, so the click looks
+    /// like it did nothing — which is exactly how it was reported.
+    ///
+    /// Returns whether a window was restored, so the caller can wait for it to
+    /// come back before trying to place it: a window still animating out of the
+    /// Dock reports its docked position, and moving it then lands it in the
+    /// wrong place.
+    @discardableResult
+    func restoreMinimisedWindow(pid: pid_t) -> Bool {
+        guard permission.isGranted else { return false }
+
+        let app = AXUIElementCreateApplication(pid)
+        _ = AXUIElementSetMessagingTimeout(app, Self.messagingTimeout)
+
+        let windows = windows(of: app)
+        guard !windows.isEmpty else { return false }
+
+        let main = elementValue(of: app, kAXMainWindowAttribute)
+        let candidates = windows.map { window in
+            describe(window, isMain: main.map { CFEqual(window, $0) } ?? false)
+        }
+
+        guard let index = WindowPlacementRules.windowToRestore(among: candidates) else {
+            return false
+        }
+
+        return AXUIElementSetAttributeValue(
+            windows[index], kAXMinimizedAttribute as CFString, kCFBooleanFalse) == .success
+    }
+
     private func attempt(pid: pid_t, onto displayID: DisplayID, deadline: Date) {
         guard permission.isGranted else {
             // The app is already activated by this point; only the placement

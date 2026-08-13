@@ -23,8 +23,7 @@ Built with Swift 6, SwiftPM, and AppKit, with no external dependencies.
 ```sh
 git clone https://github.com/izaakwhite/fruit-dock.git
 cd fruit-dock
-./Scripts/make-app-bundle.sh
-open build/fruit-dock.app
+./Scripts/run.sh
 ```
 
 Look for the dock icon in your menu bar. Quit from that menu.
@@ -32,6 +31,28 @@ Look for the dock icon in your menu bar. Quit from that menu.
 > **Use the bundle, not `swift run`.** `swift run FruitDockApp` is fine for a
 > quick look, but it cannot hold the Accessibility permission — see
 > [Permissions](#permissions-and-privacy).
+
+## Development loop
+
+`Scripts/run.sh` quits the running copy, rebuilds, signs, and relaunches.
+Quitting first matters: fruit-dock has no window, so a stale copy left running
+is invisible apart from a second menu-bar icon, and every click you test goes to
+the old binary — which looks exactly like a fix that didn't work.
+
+```sh
+./Scripts/run.sh                 # the usual loop
+./Scripts/run.sh --test          # run the suite first, stop if it fails
+./Scripts/run.sh --reset         # wipe saved settings — restores first-launch behaviour
+./Scripts/run.sh --release       # release configuration
+./Scripts/run.sh --no-launch     # build and sign only
+./Scripts/run.sh --help
+```
+
+`--reset` is the only way to exercise the first-launch path, where pinned apps
+are seeded from your system Dock. After the first save, seeding never runs
+again.
+
+Tests alone need none of this — `swift test` is enough.
 
 ---
 
@@ -194,7 +215,8 @@ report.
 | `Tests/FruitDockCoreTests` | Domain tests, plus fakes for every system protocol. |
 | `Tests/FruitDockUITests` | Tests for the parts of the AppKit layer that are plain logic. |
 | `Resources/Info.plist` | Bundle metadata. Holds the stable `CFBundleIdentifier`. |
-| `Scripts/make-app-bundle.sh` | Assembles and signs the `.app`. |
+| `Scripts/make-app-bundle.sh` | Assembles and signs the `.app`. Builds only. |
+| `Scripts/run.sh` | The development loop: quit, rebuild, relaunch. |
 
 The guiding rule: **decisions live in pure functions in `FruitDockCore`**, and
 the AppKit layer executes them without deciding anything. That is what lets a

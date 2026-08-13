@@ -103,6 +103,7 @@ Built: $APP
 
 Run it:      open "$APP"
 Quit it:     menu bar icon -> Quit fruit-dock
+Rebuild:     Scripts/run.sh        (quits, rebuilds, relaunches)
 
 Accessibility permission is required for windows to open on the clicked
 display. Grant it to THIS bundle — a grant given to the bare .build/ binary
@@ -110,6 +111,6 @@ does not carry over:
 
   System Settings -> Privacy & Security -> Accessibility
 
-If permission lapses after re-running this script, see the CAVEAT at the top
-of this file.
+Signed with a certificate, that grant survives rebuilds. Signed ad-hoc it does
+not, and the CAVEAT at the top of this file explains why.
 EOF

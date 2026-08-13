@@ -98,13 +98,14 @@ final class DockBarView: NSView {
             view = SeparatorView(isVertical: isVertical)
 
         case .trash:
+            let label = Self.trashHasContents ? "Trash — Full" : "Trash"
             let trash = IconView(
-                icon: NSWorkspace.shared.icon(forFile: Self.trashPath),
-                label: "Trash",
+                icon: Self.trashIcon,
+                label: label,
                 isRunning: false
             )
             trash.onActivate = { [weak self] in self?.actionHandler?.openTrash() }
-            attachHoverReporting(to: trash, label: "Trash")
+            attachHoverReporting(to: trash, label: label)
             view = trash
 
         case .app(let entry):
@@ -151,6 +152,26 @@ final class DockBarView: NSView {
 
     private static var trashPath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent(".Trash")
+    }
+
+    /// Whether anything is in the Trash, which decides which icon to draw.
+    ///
+    /// Hidden files are included: `.DS_Store` aside, an item the Finder shows
+    /// as present should not read as empty here.
+    private static var trashHasContents: Bool {
+        let contents = try? FileManager.default.contentsOfDirectory(atPath: trashPath)
+        return contents?.contains { $0 != ".DS_Store" } ?? false
+    }
+
+    /// Apple's own Trash artwork, full or empty to match.
+    ///
+    /// Not `icon(forFile:)` on `~/.Trash`: that answers with the icon for a
+    /// *folder at that path*, which is a plain folder rather than the Trash
+    /// can, and never changes when the Trash fills or empties. `trashFullName`
+    /// and `trashEmptyName` are the images the Dock itself uses.
+    private static var trashIcon: NSImage {
+        let name = trashHasContents ? NSImage.trashFullName : NSImage.trashEmptyName
+        return NSImage(named: name) ?? NSWorkspace.shared.icon(forFile: trashPath)
     }
 }
 

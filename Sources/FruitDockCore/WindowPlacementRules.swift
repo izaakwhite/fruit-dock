@@ -77,4 +77,30 @@ public enum WindowPlacementRules {
         guard candidates.count == 1 else { return .waitForWindows }
         return candidates[0].isEligible ? .move(0) : .nothingToMove
     }
+
+    /// Picks the window a dock click should un-minimise, if any.
+    ///
+    /// Clicking a dock icon means "bring this app up", and Apple's Dock honours
+    /// that by restoring a minimised window. Activating the app alone does not:
+    /// the app comes forward with no window, which reads as the click having
+    /// done nothing at all.
+    ///
+    /// Deliberately narrower than "restore everything". Someone with several
+    /// windows minimised chose to put each one away, and returning all of them
+    /// at once is as destructive as moving every window would be. So: restore
+    /// the nominated main window if it is minimised, otherwise the sole
+    /// minimised window, and otherwise nothing.
+    ///
+    /// Only ever called for an explicit click. Minimised state is respected
+    /// everywhere else — see `WindowCandidate.isEligible`.
+    public static func windowToRestore(among candidates: [WindowCandidate]) -> Int? {
+        // An app with any window already on screen is not the case this is for:
+        // activation will bring that window forward on its own, and restoring
+        // something the user put away would be unasked for.
+        guard !candidates.isEmpty, candidates.allSatisfy(\.isMinimised) else { return nil }
+
+        if let main = candidates.firstIndex(where: \.isMain) { return main }
+
+        return candidates.count == 1 ? 0 : nil
+    }
 }

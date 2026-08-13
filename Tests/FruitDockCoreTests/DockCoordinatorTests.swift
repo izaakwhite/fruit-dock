@@ -144,6 +144,62 @@ struct DockCoordinatorTests {
         #expect(subject.coordinator.configuration == expected)
     }
 
+    @Test("A first launch seeds pinned apps from the system Dock")
+    func firstLaunchSeedsPinnedApps() {
+        // Reported from use: the dock arrived empty, so every icon on it was an
+        // already-running app and clicking one could only switch to it. Nothing
+        // could be launched, which read as the dock being broken.
+        let systemDock = FakeSystemDock(persistent: [Fixture.safari, Fixture.terminal])
+        let subject = makeSubject(configuration: nil, systemDock: systemDock)
+
+        #expect(
+            subject.coordinator.configuration.pinnedItems.map(\.bundleIdentifier)
+                == [Fixture.safari.bundleIdentifier, Fixture.terminal.bundleIdentifier])
+    }
+
+    @Test("A seeded dock shows apps that are not running")
+    func seededDockShowsNotRunningApps() {
+        // The point of seeding: something to click that is not already open.
+        let systemDock = FakeSystemDock(persistent: [Fixture.safari])
+        let subject = makeSubject(
+            displays: [Fixture.builtIn], running: [], configuration: nil, systemDock: systemDock)
+
+        subject.coordinator.start()
+
+        #expect(subject.presenter.renderedApps == [Fixture.safari])
+        #expect(subject.presenter.renderedElements.first?.entry?.isRunning == false)
+    }
+
+    @Test("Deleted apps are not seeded")
+    func firstLaunchSkipsDeletedApps() {
+        // Apple's Dock keeps tiles for apps that have been removed, so a tile
+        // is not evidence the app is still installed.
+        let systemDock = FakeSystemDock(persistent: [Fixture.safari, Fixture.terminal])
+        let catalog = FakeApplicationCatalog()
+        catalog.missingPaths = [Fixture.terminal.path]
+
+        let subject = makeSubject(configuration: nil, systemDock: systemDock, catalog: catalog)
+
+        #expect(
+            subject.coordinator.configuration.pinnedItems.map(\.bundleIdentifier)
+                == [Fixture.safari.bundleIdentifier])
+    }
+
+    @Test("Stored settings are never overwritten by seeding")
+    func storedConfigurationIsNotReseeded() {
+        // Seed-then-diverge: an import on every launch would undo removals and
+        // keep resurrecting apps the user took off their dock.
+        var stored = DockConfiguration.default
+        stored.pinnedItems = [DockItem(Fixture.preview)]
+
+        let systemDock = FakeSystemDock(persistent: [Fixture.safari, Fixture.terminal])
+        let subject = makeSubject(configuration: stored, systemDock: systemDock)
+
+        #expect(
+            subject.coordinator.configuration.pinnedItems.map(\.bundleIdentifier)
+                == [Fixture.preview.bundleIdentifier])
+    }
+
     @Test("Disabling a display persists and removes its surface")
     func disablingDisplayPersistsAndRefreshes() {
         let subject = makeSubject()

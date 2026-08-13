@@ -79,7 +79,16 @@ final class SystemApplicationProvider: ApplicationProviding {
     /// does everything it did before the feature existed.
     func activateOrLaunch(_ application: ApplicationInfo, on displayID: DisplayID?) {
         if let running = runningApplication(for: application.bundleIdentifier) {
+            // Hidden (⌘H) and minimised are different states with different
+            // remedies, and an app can be in both. Neither is undone by
+            // `activate()`, so a click on either used to bring the app forward
+            // with nothing on screen and look like it had done nothing.
+            if running.isHidden {
+                running.unhide()
+            }
             running.activate()
+            placer.restoreMinimisedWindow(pid: running.processIdentifier)
+
             if let displayID {
                 placer.place(pid: running.processIdentifier, onto: displayID)
             }
