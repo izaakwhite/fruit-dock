@@ -28,6 +28,17 @@ cd fruit-dock
 
 Look for the dock icon in your menu bar. Quit from that menu.
 
+Nothing else is required — no Apple account, no certificate. The build signs
+ad-hoc when it finds no certificate, which works fine; the only consequence is
+that Accessibility permission has to be re-granted after each rebuild, and
+[Code signing](#code-signing) explains how to stop that.
+
+Two things do not travel with the repository, because macOS ties both to a
+particular machine:
+
+- **Accessibility permission** must be granted again on each Mac.
+- **Signing certificates** are per-machine. Create one wherever you develop.
+
 > **Use the bundle, not `swift run`.** `swift run FruitDockApp` is fine for a
 > quick look, but it cannot hold the Accessibility permission — see
 > [Permissions](#permissions-and-privacy).

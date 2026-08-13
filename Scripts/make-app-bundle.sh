@@ -76,10 +76,18 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # fine, the chain is not. Fetch the generation your certificate names as its
 # issuer (`openssl x509 -noout -issuer`) from
 # https://www.apple.com/certificateauthority/ and add it to the login keychain.
+#
+# The `|| true` is load-bearing. Under `set -e` with `pipefail`, `grep` exiting
+# 1 because it matched nothing fails the whole substitution and kills the
+# script — so on any Mac without a certificate this aborted silently, after
+# assembling the bundle and before signing it, leaving behind a bundle carrying
+# the binary's own transient ad-hoc identity. That is exactly the T13 failure
+# this script exists to prevent, and "no certificate installed" is the normal
+# case for anyone who has just cloned the repository.
 SIGN_IDENTITY="${FRUIT_DOCK_SIGN_IDENTITY:-$(
     security find-identity -v -p codesigning 2>/dev/null \
         | grep -m1 'Apple Development' \
-        | sed -E 's/.*"(.*)".*/\1/'
+        | sed -E 's/.*"(.*)".*/\1/' || true
 )}"
 
 # --identifier regardless of which path is taken: without it codesign derives
