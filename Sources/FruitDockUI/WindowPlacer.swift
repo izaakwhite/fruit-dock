@@ -67,6 +67,50 @@ final class WindowPlacer {
         retries.removeValue(forKey: pid)?.invalidate()
     }
 
+    /// Whether the Accessibility API can be used at all right now.
+    var hasPermission: Bool { permission.isGranted }
+
+    /// One of an application's minimised windows, with the index needed to find
+    /// it again.
+    struct MinimizedWindow {
+        var title: String
+        /// Position in the application's window list. Windows are addressed by
+        /// index rather than by holding the `AXUIElement`, which is not
+        /// `Sendable` and goes stale when the app closes or reorders windows.
+        var index: Int
+    }
+
+    /// The application's currently minimised windows.
+    func minimizedWindows(pid: pid_t) -> [MinimizedWindow] {
+        guard permission.isGranted else { return [] }
+
+        let app = AXUIElementCreateApplication(pid)
+        _ = AXUIElementSetMessagingTimeout(app, Self.messagingTimeout)
+
+        return windows(of: app).enumerated().compactMap { index, window in
+            guard boolValue(window, kAXMinimizedAttribute) == true else { return nil }
+            return MinimizedWindow(title: stringValue(window, kAXTitleAttribute) ?? "", index: index)
+        }
+    }
+
+    /// Un-minimises one specific window, addressed by index.
+    @discardableResult
+    func restore(windowAt index: Int, pid: pid_t) -> Bool {
+        guard permission.isGranted else { return false }
+
+        let app = AXUIElementCreateApplication(pid)
+        _ = AXUIElementSetMessagingTimeout(app, Self.messagingTimeout)
+
+        // Re-read rather than trusting the index: the list can change between
+        // the tile being drawn and the click arriving, and un-minimising the
+        // wrong window is worse than doing nothing.
+        let windows = windows(of: app)
+        guard windows.indices.contains(index) else { return false }
+
+        return AXUIElementSetAttributeValue(
+            windows[index], kAXMinimizedAttribute as CFString, kCFBooleanFalse) == .success
+    }
+
     /// Un-minimises a window if the click asked for one to come back.
     ///
     /// `NSRunningApplication.activate()` does not do this. An app whose windows
@@ -223,6 +267,14 @@ final class WindowPlacer {
         // cast means an app answering with something else yields nil instead
         // of a trap.
         return (object as? NSNumber)?.boolValue
+    }
+
+    private func stringValue(_ target: AXUIElement, _ attribute: String) -> String? {
+        var raw: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(target, attribute as CFString, &raw) == .success
+        else { return nil }
+        return raw as? String
     }
 
     private func isSettable(_ target: AXUIElement, _ attribute: String) -> Bool {

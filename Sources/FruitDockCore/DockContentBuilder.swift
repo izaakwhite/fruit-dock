@@ -25,12 +25,16 @@ public struct DockEntry: Equatable, Sendable, Identifiable {
 /// layout rules testable.
 public enum DockElement: Equatable, Sendable, Identifiable {
     case app(DockEntry)
+    case folder(DockFolder)
+    case minimizedWindow(WindowTile)
     case separator
     case trash
 
     public var id: String {
         switch self {
         case .app(let entry): entry.id
+        case .folder(let folder): "folder:\(folder.path)"
+        case .minimizedWindow(let window): "window:\(window.id)"
         case .separator: "—separator—"
         case .trash: "—trash—"
         }
@@ -39,6 +43,13 @@ public enum DockElement: Equatable, Sendable, Identifiable {
     public var entry: DockEntry? {
         if case .app(let entry) = self { return entry }
         return nil
+    }
+
+    /// Whether this element is drawn at full icon size. Separators are not,
+    /// which is what the fitting calculation in `DockSizing` needs to know.
+    public var isTile: Bool {
+        if case .separator = self { return false }
+        return true
     }
 }
 
@@ -66,6 +77,8 @@ public enum DockContentBuilder {
         pinned: [DockItem],
         running: [ApplicationInfo],
         recents: [ApplicationInfo] = [],
+        folders: [DockFolder] = [],
+        minimizedWindows: [WindowTile] = [],
         showsRunningApps: Bool,
         showsRecentApps: Bool = false,
         showsTrash: Bool = true
@@ -133,9 +146,18 @@ public enum DockContentBuilder {
             }
         }
 
-        if showsTrash {
-            elements.append(.separator)
-            elements.append(.trash)
+        // Folders, minimised windows and the Trash share the last section, as
+        // they do in Apple's Dock. None of them is an application: there is
+        // nothing to launch, nothing to quit, and no running state — which is
+        // exactly what the separator before them is telling the reader.
+        let others: [DockElement] =
+            folders.map(DockElement.folder)
+            + minimizedWindows.map(DockElement.minimizedWindow)
+
+        if !others.isEmpty || showsTrash {
+            if !elements.isEmpty { elements.append(.separator) }
+            elements.append(contentsOf: others)
+            if showsTrash { elements.append(.trash) }
         }
         return elements
     }

@@ -66,6 +66,22 @@ final class FakeApplicationProvider: ApplicationProviding {
     func openTrash() {
         trashOpenCount += 1
     }
+
+    var minimizedWindows: [WindowTile] = []
+    private(set) var openedFolders: [String] = []
+    private(set) var restored: [WindowTile] = []
+
+    func open(folderAtPath path: String) {
+        openedFolders.append(path)
+    }
+
+    func restore(_ window: WindowTile) {
+        restored.append(window)
+        // The real provider's window leaves the dock once restored, and the
+        // coordinator re-reads afterwards; the fake has to do the same or the
+        // tile appears to survive its own click.
+        minimizedWindows.removeAll { $0.id == window.id }
+    }
 }
 
 /// Stands in for Apple's Dock's defaults domain.
@@ -76,7 +92,10 @@ final class FakeApplicationProvider: ApplicationProviding {
 final class FakeSystemDock: SystemDockReading {
     var persistentApplicationTiles: [Any]
     var recentApplicationTiles: [Any]
+    var persistentOtherTiles: [Any] = []
     var showsRecentApplications: Bool?
+    var largeTileSize: Double?
+    var magnificationEnabled = false
 
     /// nil is the common case, not an edge one: the key is absent on any Mac
     /// whose Dock size was never changed.
@@ -85,13 +104,19 @@ final class FakeSystemDock: SystemDockReading {
     init(
         persistent: [ApplicationInfo] = [],
         recents: [ApplicationInfo] = [],
+        folders: [DockFolder] = [],
         showsRecentApplications: Bool? = nil,
-        tileSize: Double? = nil
+        tileSize: Double? = nil,
+        largeTileSize: Double? = nil,
+        magnificationEnabled: Bool = false
     ) {
         self.persistentApplicationTiles = persistent.map(Fixture.tile)
         self.recentApplicationTiles = recents.map(Fixture.tile)
+        self.persistentOtherTiles = folders.map(Fixture.directoryTile)
         self.showsRecentApplications = showsRecentApplications
         self.tileSize = tileSize
+        self.largeTileSize = largeTileSize
+        self.magnificationEnabled = magnificationEnabled
     }
 
     /// Simulates the Dock rewriting `recent-apps`, which it does as apps are
@@ -197,6 +222,30 @@ enum Fixture {
     static let preview = ApplicationInfo(
         bundleIdentifier: "com.apple.Preview", name: "Preview",
         path: "/System/Applications/Preview.app")
+
+    static let downloads = DockFolder(
+        name: "Downloads", path: "/Users/test/Downloads/")
+
+    /// A `directory-tile`, in the shape a live `com.apple.dock` stores it —
+    /// trailing slash and all, which is what makes the folder's name need
+    /// deriving rather than reading off the end of the path.
+    static func directoryTile(_ folder: DockFolder) -> [String: Any] {
+        [
+            "GUID": 666_512_234,
+            "tile-type": "directory-tile",
+            "tile-data": [
+                "file-label": folder.name,
+                "displayas": folder.displayAs.rawValue,
+                "showas": folder.showAs.rawValue,
+                "arrangement": 2,
+                "preferreditemsize": -1,
+                "file-data": [
+                    "_CFURLString": "file://\(folder.path)",
+                    "_CFURLStringType": 15,
+                ],
+            ],
+        ]
+    }
 
     /// A Dock tile in the shape `com.apple.dock` really stores, verified
     /// against a live plist on macOS 26.

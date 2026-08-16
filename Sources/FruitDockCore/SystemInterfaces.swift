@@ -39,6 +39,19 @@ public protocol ApplicationProviding: AnyObject {
 
     /// Reveals the Trash in Finder.
     func openTrash()
+
+    /// Reveals a pinned folder in Finder.
+    func open(folderAtPath path: String)
+
+    /// Every window currently minimised, across all running applications.
+    ///
+    /// Reading this needs Accessibility permission, so an empty array means
+    /// "cannot see" as well as "none" — which is why the dock simply omits the
+    /// section rather than showing an empty one.
+    var minimizedWindows: [WindowTile] { get }
+
+    /// Brings a minimised window back out of the dock.
+    func restore(_ window: WindowTile)
 }
 
 /// Reads Apple's Dock's own preferences.
@@ -59,9 +72,19 @@ public protocol SystemDockReading: AnyObject {
     /// Raw `recent-apps` tiles, most recent first.
     var recentApplicationTiles: [Any] { get }
 
+    /// Raw `persistent-others` tiles — pinned folders, and whatever else the
+    /// user dragged to the right of the separator.
+    var persistentOtherTiles: [Any] { get }
+
     /// The user's "Show recent applications in Dock" setting, or nil when they
     /// have never changed it — a missing key is not the same as `false`.
     var showsRecentApplications: Bool? { get }
+
+    /// `largesize` — the size a magnified tile grows to. Nil when unset.
+    var largeTileSize: Double? { get }
+
+    /// Whether hover magnification is switched on.
+    var magnificationEnabled: Bool { get }
 
     /// Apple's Dock icon size (`tilesize`), or nil when never changed from the
     /// default. Raw and unvalidated, as with the tiles: interpreting it is the
@@ -135,4 +158,11 @@ public protocol DockActionHandling: AnyObject {
     func togglePin(_ application: ApplicationInfo)
     func isPinned(_ application: ApplicationInfo) -> Bool
     func openTrash()
+
+    /// Opens a pinned folder. Apple's Dock opens a fan or grid of the contents;
+    /// this reveals the folder itself until that popover exists.
+    func open(_ folder: DockFolder)
+
+    /// Brings a minimised window back.
+    func restore(_ window: WindowTile)
 }

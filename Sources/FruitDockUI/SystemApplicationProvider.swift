@@ -113,6 +113,46 @@ final class SystemApplicationProvider: ApplicationProviding {
         }
     }
 
+    func open(folderAtPath path: String) {
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
+
+    /// Every minimised window across the running applications.
+    ///
+    /// Read through the Accessibility API on demand rather than tracked, because
+    /// macOS posts no notification when a window is minimised — the same absence
+    /// that forces the Dock-location poll (T10). Reading on refresh is the
+    /// cheaper of the two wrongs: a stale tile until the next refresh, rather
+    /// than a timer interrogating every process on the machine.
+    ///
+    /// Without Accessibility permission this is empty, which the dock treats as
+    /// "none" — the section simply does not appear, rather than appearing empty.
+    var minimizedWindows: [WindowTile] {
+        guard placer.hasPermission else { return [] }
+
+        return runningApplications.flatMap { application -> [WindowTile] in
+            guard let running = runningApplication(for: application.bundleIdentifier)
+            else { return [] }
+
+            return placer.minimizedWindows(pid: running.processIdentifier)
+                .map { found in
+                    WindowTile(
+                        title: found.title,
+                        application: application,
+                        processIdentifier: running.processIdentifier,
+                        windowIndex: found.index
+                    )
+                }
+        }
+    }
+
+    func restore(_ window: WindowTile) {
+        // Activated as well as restored: a window that returns behind whatever
+        // the user was looking at reads as the click having failed.
+        runningApplication(for: window.application.bundleIdentifier)?.activate()
+        placer.restore(windowAt: window.windowIndex, pid: window.processIdentifier)
+    }
+
     func openTrash() {
         NSWorkspace.shared.open(
             URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent(".Trash"))

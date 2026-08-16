@@ -37,6 +37,8 @@ public enum SystemDockPreferences {
     // MARK: - Icon size
 
     public static let tileSizeKey = "tilesize"
+    public static let largeSizeKey = "largesize"
+    public static let magnificationKey = "magnification"
 
     /// The Dock's own default, used when `tilesize` has never been changed.
     public static let defaultTileSize: Double = 48
@@ -91,6 +93,77 @@ public enum SystemDockPreferences {
     }
 
     /// One tile, or nil when it does not describe an application we can open.
+    // MARK: - Folders
+
+    public static let persistentOthersKey = "persistent-others"
+
+    /// Tile type Apple uses for a pinned folder. Anything else in
+    /// `persistent-others` — a pinned file, a URL — is not a stack and is
+    /// skipped rather than guessed at.
+    public static let directoryTileType = "directory-tile"
+
+    /// Folders pinned to the Dock, in Dock order.
+    ///
+    /// Skips on failure for the same reason as `applications`: this data is
+    /// another process's, and one tile we cannot read must cost that tile
+    /// rather than the whole import.
+    ///
+    /// - Parameter exists: whether something is still present at a path. A
+    ///   folder can be deleted while its tile remains, and a stack that opens
+    ///   onto nothing is worse than no stack.
+    public static func folders(
+        fromTiles tiles: [Any],
+        exists: (String) -> Bool = { _ in true }
+    ) -> [DockFolder] {
+        var seen = Set<String>()
+        var folders: [DockFolder] = []
+
+        for tile in tiles {
+            guard let folder = folder(fromTile: tile),
+                  exists(folder.path),
+                  seen.insert(folder.path).inserted
+            else { continue }
+
+            folders.append(folder)
+        }
+        return folders
+    }
+
+    static func folder(fromTile tile: Any) -> DockFolder? {
+        guard let tile = tile as? [String: Any],
+              // Only directory tiles. `persistent-others` also carries pinned
+              // files and URLs, which are not stacks.
+              tile["tile-type"] as? String == directoryTileType,
+              let tileData = tile["tile-data"] as? [String: Any],
+              let fileData = tileData["file-data"] as? [String: Any],
+              let urlString = fileData["_CFURLString"] as? String,
+              let path = filePath(from: urlString)
+        else { return nil }
+
+        return DockFolder(
+            name: folderName(fromTileData: tileData, path: path),
+            path: path,
+            displayAs: DockFolder.DisplayStyle.from(tileData["displayas"] as? Int),
+            showAs: DockFolder.ViewStyle.from(tileData["showas"] as? Int)
+        )
+    }
+
+    /// The Dock's own label, falling back to the folder's name on disk.
+    ///
+    /// The path is percent-decoded and carries a trailing slash, so the last
+    /// component is taken after that slash is removed — otherwise every folder
+    /// would be named the empty string.
+    private static func folderName(fromTileData tileData: [String: Any], path: String) -> String {
+        if let label = tileData["file-label"] as? String, !label.isEmpty {
+            return label
+        }
+        let trimmed = path.hasSuffix("/") ? String(path.dropLast()) : path
+        let last = trimmed.split(separator: "/").last.map(String.init) ?? ""
+        return last.isEmpty ? "Folder" : last
+    }
+
+    // MARK: - Applications
+
     static func application(fromTile tile: Any) -> ApplicationInfo? {
         guard let tile = tile as? [String: Any],
               let tileData = tile["tile-data"] as? [String: Any],

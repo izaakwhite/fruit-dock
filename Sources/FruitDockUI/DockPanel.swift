@@ -48,6 +48,16 @@ final class DockPanel: NSPanel {
             isVertical: configuration.edge.isVertical, iconSize: iconSize)
         bar.displayID = display.id
 
+        // A ratio, so it survives the fitting that shrinks tiles on a crowded
+        // display: the tiles get smaller, the growth stays proportional.
+        bar.maximumMagnification = CGFloat(
+            DockMagnification.maximumScale(
+                largeSize: configuration.largeIconSize,
+                tileSize: configuration.iconSize,
+                isEnabled: configuration.magnifies
+            )
+        )
+
         super.init(
             contentRect: .zero,
             // `.nonactivatingPanel` is what keeps focus with the user's app.

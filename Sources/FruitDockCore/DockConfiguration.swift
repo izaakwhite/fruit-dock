@@ -29,6 +29,16 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
     /// Icon edge length in points, before any hover magnification.
     public var iconSize: Double
 
+    /// Whether tiles grow under the cursor. Off by default, matching macOS.
+    public var magnifies: Bool
+
+    /// The size a magnified tile grows to, in points — Apple's `largesize`.
+    ///
+    /// Meaningless on its own: what matters is its ratio to `iconSize`, and a
+    /// value at or below it means no magnification rather than shrinking. See
+    /// `DockMagnification.maximumScale`.
+    public var largeIconSize: Double
+
     /// Apps the user pinned, in the order they arranged them. FR-3.1.
     public var pinnedItems: [DockItem]
 
@@ -56,6 +66,8 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
         disabledDisplays: Set<DisplayID> = [],
         edge: DockEdge = .bottom,
         iconSize: Double = 48,
+        magnifies: Bool = false,
+        largeIconSize: Double = 64,
         pinnedItems: [DockItem] = [],
         showsRunningApps: Bool = true,
         showsRecentApps: Bool = false,
@@ -65,6 +77,8 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
         self.disabledDisplays = disabledDisplays
         self.edge = edge
         self.iconSize = iconSize
+        self.magnifies = magnifies
+        self.largeIconSize = largeIconSize
         self.pinnedItems = pinnedItems
         self.showsRunningApps = showsRunningApps
         self.showsRecentApps = showsRecentApps
@@ -125,6 +139,10 @@ public struct DockConfiguration: Codable, Equatable, Sendable {
             ?? fallback.edge
         iconSize = try container.decodeIfPresent(Double.self, forKey: .iconSize)
             ?? fallback.iconSize
+        magnifies = try container.decodeIfPresent(Bool.self, forKey: .magnifies)
+            ?? fallback.magnifies
+        largeIconSize = try container.decodeIfPresent(Double.self, forKey: .largeIconSize)
+            ?? fallback.largeIconSize
         pinnedItems = try container.decodeIfPresent([DockItem].self, forKey: .pinnedItems)
             ?? fallback.pinnedItems
         showsRunningApps = try container.decodeIfPresent(Bool.self, forKey: .showsRunningApps)

@@ -240,12 +240,16 @@ struct DockContentBuilderTests {
         #expect(!elements.contains(.separator))
     }
 
-    @Test("An empty dock still shows Trash")
+    @Test("An empty dock shows Trash without a separator above it")
     func emptyDockKeepsTrash() {
+        // A separator needs something on both sides. With nothing pinned or
+        // running it is a line floating above a single tile — the same stray
+        // line the recents section already avoids, which this case used to
+        // draw anyway.
         let elements = DockContentBuilder.elements(
             pinned: [], running: [], showsRunningApps: true)
 
-        #expect(elements == [.separator, .trash])
+        #expect(elements == [.trash])
     }
 
     @Test("A dock with nothing at all is representable")

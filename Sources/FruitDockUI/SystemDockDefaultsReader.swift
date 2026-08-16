@@ -29,6 +29,25 @@ final class SystemDockDefaultsReader: SystemDockReading {
         defaults?.array(forKey: SystemDockPreferences.recentAppsKey) ?? []
     }
 
+    var persistentOtherTiles: [Any] {
+        defaults?.array(forKey: SystemDockPreferences.persistentOthersKey) ?? []
+    }
+
+    var largeTileSize: Double? {
+        guard let defaults,
+              defaults.object(forKey: SystemDockPreferences.largeSizeKey) != nil
+        else { return nil }
+
+        return defaults.double(forKey: SystemDockPreferences.largeSizeKey)
+    }
+
+    var magnificationEnabled: Bool {
+        // Absent means off here, unlike `show-recents`: magnification is
+        // off by default in System Settings, so a missing key agrees with
+        // `bool(forKey:)` returning false.
+        defaults?.bool(forKey: SystemDockPreferences.magnificationKey) ?? false
+    }
+
     var tileSize: Double? {
         // Absent on a Mac whose Dock size was never changed, and nil must mean
         // that rather than zero — a zero here would produce icons of no size.

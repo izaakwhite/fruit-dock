@@ -53,6 +53,17 @@ public final class DockCoordinator {
             // display then scales it — see `DockSizing`.
             seeded.iconSize = SystemDockPreferences.tileSize(systemDock.tileSize)
 
+            // Magnification comes over too, so the second dock behaves like the
+            // first rather than merely resembling it.
+            seeded.magnifies = systemDock.magnificationEnabled
+            // Only when the system actually has a value. Running it through the
+            // same fallback as `tilesize` would resolve an unset `largesize` to
+            // the *tile* default and make the magnified size smaller than the
+            // resting one — magnification that shrinks, from a key nobody set.
+            if let largeSize = systemDock.largeTileSize {
+                seeded.largeIconSize = SystemDockPreferences.tileSize(largeSize)
+            }
+
             // Pinned apps are seeded too, not just the preferences. An empty
             // dock on first launch shows nothing but whatever happens to be
             // running, so every icon is an app the user could already reach and
@@ -123,6 +134,8 @@ public final class DockCoordinator {
                 pinned: configuration.pinnedItems,
                 running: applicationProvider.runningApplications,
                 recents: recentApplications(),
+                folders: pinnedFolders(),
+                minimizedWindows: applicationProvider.minimizedWindows,
                 showsRunningApps: configuration.showsRunningApps,
                 showsRecentApps: configuration.showsRecentApps
             )
@@ -141,6 +154,19 @@ public final class DockCoordinator {
         return SystemDockPreferences.applications(
             fromTiles: systemDock.recentApplicationTiles,
             isInstalled: applicationCatalog.applicationExists(atPath:)
+        )
+    }
+
+    /// Folders the user pinned to their Dock, re-read for the same reason.
+    ///
+    /// Mirrored rather than seeded, unlike the applications: a folder has no
+    /// running state to diverge from, nothing about it is worth a separate
+    /// arrangement, and someone who adds Downloads to their Dock plainly wants
+    /// it on both.
+    private func pinnedFolders() -> [DockFolder] {
+        SystemDockPreferences.folders(
+            fromTiles: systemDock.persistentOtherTiles,
+            exists: applicationCatalog.applicationExists(atPath:)
         )
     }
 
@@ -246,5 +272,17 @@ extension DockCoordinator: DockActionHandling {
 
     public func openTrash() {
         applicationProvider.openTrash()
+    }
+
+    public func open(_ folder: DockFolder) {
+        applicationProvider.open(folderAtPath: folder.path)
+    }
+
+    public func restore(_ window: WindowTile) {
+        applicationProvider.restore(window)
+        // The window leaving the dock changes what belongs on it, and nothing
+        // else will notice: minimising and un-minimising are not launches or
+        // terminations, so the running-applications notification never fires.
+        refreshContents()
     }
 }

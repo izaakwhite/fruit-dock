@@ -59,12 +59,68 @@ final class DockBarView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    // MARK: - Magnification
+
+    /// How large a magnified tile grows, from the user's own Dock settings.
+    /// 1 means magnification is switched off, which is macOS's default.
+    var maximumMagnification: CGFloat = 1 {
+        didSet { if maximumMagnification != oldValue { applyMagnification() } }
+    }
+
+    /// Cursor position along the run in tiles, or nil when the pointer is away.
+    private var cursorInTiles: Double?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+
+        // The whole bar, not each tile: magnification depends on the cursor's
+        // distance from *every* tile, including ones it is nowhere near, so no
+        // per-tile tracking area can answer it.
+        addTrackingArea(
+            NSTrackingArea(
+                rect: bounds,
+                options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+                owner: self
+            )
+        )
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard maximumMagnification > 1 else { return }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let along = isVertical ? bounds.maxY - point.y : point.x
+        let pitch = iconSize + Self.spacing
+
+        // Measured from the first tile's centre, so a cursor sitting between
+        // two tiles lands on a fraction and raises both.
+        cursorInTiles = pitch > 0 ? (Double(along) - Double(Self.padding + iconSize / 2)) / Double(pitch) : nil
+        applyMagnification()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        cursorInTiles = nil
+        applyMagnification()
+    }
+
+    private func applyMagnification() {
+        let tiles = stack.arrangedSubviews.compactMap { $0 as? IconView }
+        guard !tiles.isEmpty else { return }
+
+        let scales = DockMagnification.scales(
+            count: tiles.count,
+            cursor: maximumMagnification > 1 ? cursorInTiles : nil,
+            maximum: Double(maximumMagnification)
+        )
+        for (tile, scale) in zip(tiles, scales) {
+            tile.magnification = CGFloat(scale)
+        }
+    }
+
     /// Extent one element occupies along the dock's long axis.
     private static func extent(of element: DockElement, iconSize: CGFloat) -> CGFloat {
-        switch element {
-        case .separator: separatorExtent
-        case .app, .trash: iconSize
-        }
+        element.isTile ? iconSize : separatorExtent
     }
 
     /// The size a bar needs for `elements`, in the given orientation.
@@ -136,6 +192,35 @@ final class DockBarView: NSView {
             trash.onActivate = { [weak self] in self?.actionHandler?.openTrash() }
             attachHoverReporting(to: trash, label: label)
             view = trash
+
+        case .folder(let folder):
+            // `displayas` decides whether the tile shows the folder or the item
+            // on top of the pile. Only the folder is drawn for now — the pile's
+            // top item needs the folder's contents, which needs the popover
+            // that opening a stack has yet to grow.
+            let icon = IconView(
+                icon: NSWorkspace.shared.icon(forFile: folder.path),
+                label: folder.name,
+                isRunning: false
+            )
+            icon.onActivate = { [weak self] in self?.actionHandler?.open(folder) }
+            attachHoverReporting(to: icon, label: folder.name)
+            view = icon
+
+        case .minimizedWindow(let window):
+            // The application's icon rather than a thumbnail of the window.
+            // Apple draws a live preview, which needs either the private SPI
+            // this project rules out (B8) or Screen Recording consent — a
+            // second permission, for decoration. Badged so the tile does not
+            // read as a duplicate of the app's own.
+            let icon = IconView(
+                icon: Self.minimizedIcon(for: window),
+                label: window.label,
+                isRunning: false
+            )
+            icon.onActivate = { [weak self] in self?.actionHandler?.restore(window) }
+            attachHoverReporting(to: icon, label: window.label)
+            view = icon
 
         case .app(let entry):
             let application = entry.application
@@ -228,6 +313,21 @@ final class DockBarView: NSView {
 
     private static let dockResources =
         "/System/Library/CoreServices/Dock.app/Contents/Resources"
+
+    /// A minimised window's tile: the application's icon, dimmed.
+    ///
+    /// Dimmed rather than badged, because at dock size a badge on an icon that
+    /// is already small is unreadable. What it has to convey is "this one is
+    /// put away", and reduced contrast says that without needing to be legible.
+    private static func minimizedIcon(for window: WindowTile) -> NSImage {
+        let source = NSWorkspace.shared.icon(forFile: window.application.path)
+        let dimmed = NSImage(size: source.size, flipped: false) { rect in
+            source.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 0.55)
+            return true
+        }
+        dimmed.accessibilityDescription = window.label
+        return dimmed
+    }
 }
 
 /// The hairline dividing applications from Trash, as in Apple's Dock.
@@ -338,12 +438,34 @@ private final class IconView: NSView {
         onActivate?()
     }
 
-    /// Grows the icon slightly under the cursor.
+    /// Magnification applied by the bar, which is the only thing that knows
+    /// where the cursor is relative to every other tile.
+    ///
+    /// Separate from `isHovered` on purpose: a tile two places away magnifies
+    /// without being hovered, and must not take the highlight or the label.
+    var magnification: CGFloat = 1 {
+        didSet {
+            guard magnification != oldValue else { return }
+            applyHoverScale()
+        }
+    }
+
+    /// Grows the icon under the cursor, and its neighbours by less.
+    ///
+    /// Anchored at the bottom edge so tiles rise out of the dock rather than
+    /// growing through it, which is what Apple's does — the dock is at an edge
+    /// of the screen, so there is only one direction for a tile to grow.
     ///
     /// Under Reduce Motion the scale is applied without animation rather than
     /// skipped — the affordance survives, the movement does not.
     private func applyHoverScale() {
-        let scale: CGFloat = isHovered ? 1.12 : 1
+        // Whichever is larger, so a plain hover still responds when
+        // magnification is switched off in System Settings.
+        let scale = max(magnification, isHovered ? 1.12 : 1)
+
+        imageView.layer?.anchorPoint = CGPoint(x: 0.5, y: 0)
+        imageView.layer?.position = CGPoint(x: imageView.frame.midX, y: imageView.frame.minY)
+
         let transform = CATransform3DMakeScale(scale, scale, 1)
 
         guard !SystemAppearance.reducesMotion else {
